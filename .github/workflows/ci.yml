@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]" ruff==0.17.3
+      - run: ruff check shuttlecam tests tools
+      - run: pytest -q
+
+  firmware:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [p10-display, esp32-cam-v1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.project }}-${{ hashFiles(format('firmware/{0}/platformio.ini', matrix.project)) }}
+      - run: pip install platformio
+      - run: pio run -d firmware/${{ matrix.project }}

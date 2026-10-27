@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# PlatformIO
+.pio/
+.vscode/
+
+# Files the app writes while running
+calibration.json
+*.calibration.json
+config.toml
+shots.csv
+frame.png
+smash.mp4
+smash.avi
+shot.png

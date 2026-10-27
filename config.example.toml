@@ -1,0 +1,47 @@
+# shuttlecam settings. Copy to config.toml and pass it with `shuttlecam -c config.toml run`.
+# Every value here is the default; delete anything you don't change.
+
+calibration = "calibration.json"   # from `shuttlecam calibrate`
+log = "shots.csv"                  # every shot is appended here
+
+[camera]
+source = "picamera2"     # or a video file, or a webcam index like "0"
+size = [640, 480]        # IMX219 (Pi Camera v2 and clones): the ~200 fps mode
+process_width = 320      # the ISP scales frames to this width for detection
+fps = 200
+exposure_us = 1000       # short shutter, less motion blur; needs a well-lit hall
+analogue_gain = 8.0
+# file_fps = 240         # real capture rate of a phone slow-motion clip
+
+[detector]
+diff_threshold = 18      # grey levels; raise if noise shows up as detections
+background_rate = 0.02   # how fast the background average follows the scene
+polarity = "any"         # "bright" if the shuttle is lighter than everything behind it
+min_area = 2
+max_area = 250           # bigger blobs (players) are ignored
+dilate = 1
+max_detections = 8
+ignore_rects = []        # e.g. [[260, 0, 60, 40]] to mask the P10 display if it's in view
+
+[tracker]
+model = "drag"           # "drag" (EKF with air drag) or "cv" (constant velocity, needs accel_noise ~500)
+terminal_velocity = 6.7  # m/s; feather shuttles are about 6.5-6.9, nylon a bit higher
+gravity = 9.81
+pixel_noise = 1.5
+accel_noise = 30.0
+drag_uncertainty = 0.25
+gate = 4.0
+first_point_gate = 3.0
+min_hits = 5
+max_misses = 3
+max_tracks = 10
+max_duration_s = 2.0
+min_speed_kmh = 50.0
+max_speed_kmh = 450.0
+min_path_m = 0.6
+merge_gap_s = 0.3
+
+[display]
+backend = "console"      # "serial" for the ESP32 + P10 panels
+port = "/dev/serial0"
+baud = 115200

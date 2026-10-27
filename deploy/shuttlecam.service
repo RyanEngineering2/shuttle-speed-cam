@@ -1,0 +1,16 @@
+[Unit]
+Description=shuttlecam badminton smash speed camera
+After=multi-user.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/.venv/bin/shuttlecam -c config.toml run --stats
+Restart=on-failure
+RestartSec=3
+# Keep stdout unbuffered so `journalctl -u shuttlecam -f` shows shots as they happen.
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

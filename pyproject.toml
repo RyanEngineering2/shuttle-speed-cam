@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shuttlecam"
+version = "2.0.0"
+description = "Badminton smash speed camera: Raspberry Pi + drag-aware Kalman filter + P10 LED display"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.24", "opencv-python-headless>=4.8"]
+
+[project.optional-dependencies]
+# On the Pi, picamera2 comes from apt (python3-picamera2); see deploy/install.sh.
+serial = ["pyserial>=3.5"]
+plot = ["matplotlib>=3.7"]
+dev = ["pytest>=7", "matplotlib>=3.7", "pyserial>=3.5"]
+
+[project.scripts]
+shuttlecam = "shuttlecam.cli:main"
+
+[tool.setuptools]
+packages = ["shuttlecam"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
