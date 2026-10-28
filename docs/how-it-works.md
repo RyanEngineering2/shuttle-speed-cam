@@ -253,14 +253,14 @@ the simulated results above.
 
 **What still doesn't work on this footage:**
 
-- **Speed.** From behind the baseline the shuttle moves mostly in depth, so the
-  single-plane calibration in section 3 can't apply. That needs a 3D mode: work
-  out the camera's pose from the court lines and net height, then fit the
-  shuttle's 3D path with the drag model.
-- **Shots close to the players.** All the flights found were lifts and clears
-  above the players. Fast flat shots and smashes pass through the players' motion
-  and were mostly missed. The tested rally had no clear smash, so this needs more
-  footage to work on.
+- **Speed from this angle** needs the 3D mode: the shuttle moves mostly in depth,
+  so the single-plane calibration in section 3 can't apply. See
+  [3D mode](3d-mode.md), which calibrates the camera from the court and fits each
+  shot's 3D flight. It measured a smash from a later rally of the same video.
+- **Shots close to the players.** All the flights found in this rally were lifts
+  and clears above the players. Fast flat shots pass through the players' motion,
+  and a smash is often only picked up a few frames after it leaves the racket (the
+  3D mode copes by timing the hit from the incoming shuttle).
 - **Short visible flights.** A high clear that leaves the top of the frame within
   a few frames never reaches `min_hits` points.
 - **Camera drift.** A handheld or re-framed camera moves between rallies, so the

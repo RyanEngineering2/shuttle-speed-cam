@@ -44,6 +44,22 @@ min_path_m = 0.6
 max_jitter = 1.0         # reject jagged tracks (limbs, rackets); try 0.6 for crowded match footage
 merge_gap_s = 0.3
 
+[analyze3d]               # match footage in 3D (pixel values are for 1920 px wide video)
+diff_threshold = 18
+max_area = 1200          # a fast shuttle near the camera is a long streak
+player_area = 3000
+player_margin = 24
+min_image_speed = 150.0  # px/s
+max_image_speed = 40000.0
+accel_noise = 8000.0     # px/s^2
+pixel_noise = 1.5
+min_hits = 8
+max_misses = 4
+min_path = 80.0          # px
+max_jitter = 0.8
+incoming_gap_s = 0.4     # a track ending this soon before a shot, and
+incoming_distance = 480.0  # this close (px), is the incoming shuttle
+
 [display]
 backend = "console"      # "serial" for the ESP32 + P10 panels
 port = "/dev/serial0"

@@ -19,10 +19,11 @@ from matplotlib.figure import Figure
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from shuttlecam.config import Config
+from shuttlecam.analyze3d import analyze_3d
+from shuttlecam.config import Analyze3DConfig, Config
 from shuttlecam.pipeline import Pipeline, analyze
-from shuttlecam.plot import plot_shot
-from shuttlecam.sim import SmashScene
+from shuttlecam.plot import plot_flight3d, plot_shot
+from shuttlecam.sim import Smash3DScene, SmashScene
 
 OUT = ROOT / "docs" / "images"
 
@@ -129,8 +130,28 @@ def camera_view() -> None:
     print("camera-view.png")
 
 
+def smash_3d() -> None:
+    """The 3D mode on a synthetic jump smash filmed from behind the baseline."""
+    scene = Smash3DScene(size=(1280, 720))
+    frames = list(scene.frames())
+    shots = analyze_3d(iter(frames), scene.camera, Analyze3DConfig())
+    (shot,) = [s for s in shots if s.launch_reliable]
+    stacked = np.max(np.stack([f.image for f in frames]), axis=0)
+    lo, hi = shot.fit.speed_range_kmh
+    plot_flight3d(
+        shot.fit,
+        scene.camera,
+        str(OUT / "smash-3d.png"),
+        image=stacked,
+        title=f"Simulated {scene.speed_kmh:.0f} km/h jump smash, filmed from behind the baseline at 60 fps",
+        truth=scene.truth,
+    )
+    print(f"smash-3d.png: {shot.fit.speed_kmh:.0f} km/h ({lo:.0f}-{hi:.0f}), true {scene.speed_kmh:.0f}")
+
+
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     simulated_smash()
     camera_view()
     frame_rate()
+    smash_3d()

@@ -172,3 +172,147 @@ class SmashScene:
         for frame in self.frames():
             out.write(frame.image)
         out.release()
+
+
+# -- match footage, in 3D ------------------------------------------------------------
+
+
+def look_at_camera(position, target, focal: float, size: tuple[int, int]):
+    """A CameraModel at `position` looking at `target`, horizon level."""
+    from .camera3d import CameraModel
+
+    c = np.asarray(position, float)
+    forward = np.asarray(target, float) - c
+    forward /= np.linalg.norm(forward)
+    right = np.cross(forward, [0.0, 0.0, 1.0])
+    right /= np.linalg.norm(right)
+    down = np.cross(forward, right)
+    R = np.vstack([right, down, forward])  # world -> camera
+    rvec = cv2.Rodrigues(R)[0].ravel()
+    tvec = -R @ c
+    return CameraModel(float(focal), size[0] / 2.0, size[1] / 2.0, rvec, tvec, tuple(size))
+
+
+@dataclass
+class Smash3DScene:
+    """A jump smash filmed from behind the near baseline, like most match footage.
+
+    The shuttle drops in on a lift, is hit at `contact`, and flies away from the
+    camera under drag and gravity until it lands. The camera defaults match the
+    fan recording the 3D mode was tested on: 6 m behind the baseline, 1.8 m up.
+    """
+
+    speed_kmh: float = 320.0
+    heading_deg: float = 5.0  # across the court: 0 is straight down it, + is to the right
+    elevation_deg: float = -10.0  # negative is downward
+    contact: tuple[float, float, float] = (1.3, -3.9, 2.7)
+    incoming_velocity: tuple[float, float, float] = (0.0, -1.0, -5.5)  # the lift coming down
+    terminal_velocity: float = 6.5
+    t_hit: float = 0.21
+    fps: float = 60.0
+    duration: float = 0.8
+    size: tuple[int, int] = (1920, 1080)
+    camera_position: tuple[float, float, float] = (2.1, -12.6, 1.8)
+    look_at: tuple[float, float, float] = (0.4, 0.0, 1.0)
+    focal: float = 1575.0  # at 1920 px wide
+    shuttle_diameter: float = 0.065
+    exposure_s: float = 0.004
+    noise: float = 2.0
+    seed: int = 1
+
+    @cached_property
+    def camera(self):
+        scale = self.size[0] / 1920
+        return look_at_camera(self.camera_position, self.look_at, self.focal * scale, self.size)
+
+    def _launch_velocity(self) -> np.ndarray:
+        v = self.speed_kmh / 3.6
+        h, e = math.radians(self.heading_deg), math.radians(self.elevation_deg)
+        return v * np.array([math.cos(e) * math.sin(h), math.cos(e) * math.cos(h), math.sin(e)])
+
+    @cached_property
+    def landing(self) -> tuple[float, np.ndarray]:
+        """When and where the smash reaches the floor."""
+        from .fit3d import _integrate
+
+        k = 9.81 / self.terminal_velocity**2
+        times = self.t_hit + np.arange(0.0, 3.0, 5e-4)
+        traj = _integrate(
+            np.asarray(self.contact, float), self._launch_velocity(), self.t_hit, times, k, 9.81, h=5e-4
+        )
+        i = int(np.argmax(traj[:, 2] <= 0.0))
+        return float(times[i]), traj[i, :3]
+
+    def truth(self, t: float) -> np.ndarray:
+        """True [x, y, z, vx, vy, vz] at time t (lying still where it landed after that)."""
+        from .fit3d import _integrate
+
+        p = np.asarray(self.contact, float)
+        if t < self.t_hit:
+            v = np.asarray(self.incoming_velocity, float)
+            return np.concatenate([p + v * (t - self.t_hit), v])
+        t_land, where = self.landing
+        if t >= t_land:
+            return np.concatenate([where * [1, 1, 0], [0.0, 0.0, 0.0]])
+        k = 9.81 / self.terminal_velocity**2
+        return _integrate(p, self._launch_velocity(), self.t_hit, np.array([t]), k, 9.81, h=5e-4)[0]
+
+    def true_speed_kmh(self, t: float) -> float:
+        return float(np.linalg.norm(self.truth(t)[3:]) * 3.6)
+
+    def landmark_pixels(self, noise_px: float = 0.0, seed: int = 0) -> dict[str, tuple[float, float]]:
+        """Court landmarks as they'd be clicked in a frame: visible ones only, with noise."""
+        from .court import landmarks
+
+        rng = np.random.default_rng(seed)
+        cam, (w, h) = self.camera, self.size
+        out = {}
+        for name, p in landmarks().items():
+            if cam.depth([p])[0] <= 0:
+                continue
+            u, v = cam.project([p])[0] + rng.normal(0, noise_px, 2)
+            if 0 <= u < w and 0 <= v < h:
+                out[name] = (float(u), float(v))
+        return out
+
+    def frames(self) -> Iterator[Frame]:
+        from .court import segments
+
+        rng = np.random.default_rng(self.seed)
+        w, h = self.size
+        cam = self.camera
+        # A blurred texture for the hall, darker above the court, and the court lines.
+        tex = cv2.GaussianBlur(rng.normal(0, 1, (h, w)), (0, 0), 3 * w / 1920)
+        background = 55 + 20 * tex / (tex.std() + 1e-9)
+        court = np.zeros((h, w), np.uint8)
+        for a, b in segments():
+            pa, pb = cam.project([a, b])
+            if min(cam.depth([a, b])) > 0:
+                cv2.line(
+                    court,
+                    tuple(int(v) for v in pa),
+                    tuple(int(v) for v in pb),
+                    1,
+                    max(1, w // 960),
+                    cv2.LINE_AA,
+                )
+        background[court > 0] = 190
+        n = int(self.duration * self.fps)
+        for i in range(n):
+            t = i / self.fps
+            img = background.copy()
+            layer = np.zeros((h, w), np.float64)
+            for s in np.linspace(0, self.exposure_s, 5):  # motion blur over the exposure
+                p = self.truth(t + s)[:3]
+                depth = cam.depth([p])[0]
+                if depth <= 0.3:
+                    continue
+                u, v = cam.project([p])[0]
+                r = max(0.8, self.focal * (w / 1920) * self.shuttle_diameter / 2 / depth)
+                spot = np.zeros((h, w), np.uint8)
+                centre = (round(float(u) * 16), round(float(v) * 16))  # 1/16 px precision
+                cv2.circle(spot, centre, round(float(r) * 16), 255, -1, cv2.LINE_AA, shift=4)
+                layer = np.maximum(layer, spot / 255.0)
+            img = img * (1 - layer) + 235 * layer
+            img = img + rng.normal(0, self.noise, (h, w))
+            yield Frame(np.clip(img, 0, 255).astype(np.uint8), t, i)

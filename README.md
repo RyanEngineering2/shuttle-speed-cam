@@ -53,6 +53,18 @@ A shuttle is not a ball. Its feathers give it a terminal velocity of only about
 
 The full write-up, with the math: **[docs/how-it-works.md](docs/how-it-works.md)**.
 
+### Match footage from any angle: 3D mode
+
+Most badminton video is filmed from behind a baseline, where the shuttle flies
+toward or away from the camera. `shuttlecam analyze3d` calibrates the camera from
+the **court lines and net posts**, fits each shot's **full 3D flight** with the
+same drag physics, times the hit from the **incoming shuttle**, and reports the
+launch speed with an honest range. On a real 60 fps fan recording it measured a
+Kento Momota jump smash at **about 320–345 km/h** (details and caveats in
+**[docs/3d-mode.md](docs/3d-mode.md)**).
+
+![3D mode on a synthetic smash](docs/images/smash-3d.png)
+
 For match footage with players close to the shuttle, a **player-aware mode** stops
 arms, legs and rackets from starting tracks, and a **jitter check** rejects tracks
 too jagged to be a shuttle. Both were tuned on a real 60 fps rally; see
@@ -104,7 +116,7 @@ pip install -e ".[dev]"
 shuttlecam simulate -o smash.mp4 --speed 250            # render a 250 km/h smash
 shuttlecam analyze smash.mp4 --calibration smash.calibration.json --plot shot.png
 #   shot 1:  245.2 km/h   (frame-to-frame peak 237 km/h, 45 points, t=0.080s)
-pytest                                                   # 46 tests, a few seconds
+pytest                                                   # 59 tests, about a minute
 ```
 
 ### On your own slow-motion video
@@ -117,6 +129,16 @@ shuttlecam analyze clip.mp4 --fps 240 --calibration calibration.json --plot shot
 ```
 
 `--fps` is the real capture rate. Slow-motion files often say 30.
+
+### Match footage, from any angle (3D mode)
+
+```bash
+shuttlecam calibrate3d --list                      # court landmark names
+shuttlecam calibrate3d frame.png --points "near_base/left_doubles=123,985 ..." -o camera.json --overlay check.jpg
+shuttlecam analyze3d match.mp4 --camera camera.json --start 515 --end 525 --plot smash.png
+```
+
+See [docs/3d-mode.md](docs/3d-mode.md).
 
 ### On the Raspberry Pi
 
@@ -141,8 +163,12 @@ shuttlecam/            Python package that runs on the Pi
   kalman.py            drag + gravity model, EKF, RTS smoother
   tracker.py           track birth, association, hit-time anchoring, shot speeds
   display.py           serial protocol to the P10 display node
-  sim.py               synthetic smash clips with ground truth
-  cli.py               shuttlecam run | analyze | calibrate | snapshot | simulate
+  court.py             badminton court geometry and named landmarks
+  camera3d.py          3D camera model, calibrated from the court
+  fit3d.py             3D flight fit (drag + gravity) with speed ranges
+  analyze3d.py         match footage: image tracking, hit splitting, 3D fits
+  sim.py               synthetic smash clips with ground truth, side-on and 3D
+  cli.py               shuttlecam run | analyze | calibrate | snapshot | simulate | calibrate3d | analyze3d
 firmware/
   p10-display/         ESP32: drives HUB12 P10 panels, listens on UART (PlatformIO)
   esp32-cam-v1/        v1: the whole tracker on an ESP32-CAM + OV2640 (retired)
@@ -170,8 +196,9 @@ tests/                 unit tests plus end-to-end tests on simulated clips
 ## Roadmap
 
 - [ ] Validate against a radar gun in a real hall
-- [ ] A 3D mode for end-on match footage: calibrate the camera from the court lines and fit the shuttle's 3D path ([details](docs/how-it-works.md#8-match-footage-tested-on-a-real-rally))
-- [ ] Catch smashes and drives close to the players in match footage
+- [x] A 3D mode for match footage from any angle ([docs/3d-mode.md](docs/3d-mode.md))
+- [ ] Detect the court lines automatically, instead of typing or clicking the landmarks
+- [ ] Track the shuttle from the very first frame after the hit, even right next to the player
 - [ ] Learn the shuttle's terminal velocity from its own tracks (feather vs nylon)
 - [ ] Two cameras for 3D tracking, removing the flight-plane assumption
 - [ ] A small web page on the Pi with the session's shot list and best smashes

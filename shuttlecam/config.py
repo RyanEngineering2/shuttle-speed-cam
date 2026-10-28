@@ -99,6 +99,31 @@ class TrackerConfig:
 
 
 @dataclass
+class Analyze3DConfig:
+    """`shuttlecam analyze3d`: match footage measured in 3D.
+
+    Pixel settings are for 1920 px wide video and scale with the frame width.
+    """
+
+    diff_threshold: int = 18
+    max_area: int = 1200  # biggest shuttle blob, pixels (a fast one near the camera is a long streak)
+    player_area: int = 3000  # motion blobs bigger than this are people
+    player_margin: int = 24
+    min_image_speed: float = 150.0  # px/s; slower blobs never start a track
+    max_image_speed: float = 40000.0
+    accel_noise: float = 8000.0  # px/s^2, for following the shuttle in the image
+    pixel_noise: float = 1.5
+    min_hits: int = 8
+    max_misses: int = 4
+    min_path: float = 80.0  # px
+    max_jitter: float = 0.8
+    # A track that ended at most this long before a shot started, and this close
+    # to where it started (px), is taken as the incoming shuttle.
+    incoming_gap_s: float = 0.4
+    incoming_distance: float = 480.0
+
+
+@dataclass
 class DisplayConfig:
     # "serial": ESP32 + P10 panels (firmware/p10-display), "console", or "none".
     backend: str = "console"
@@ -112,6 +137,7 @@ class Config:
     detector: DetectorConfig = field(default_factory=DetectorConfig)
     tracker: TrackerConfig = field(default_factory=TrackerConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
+    analyze3d: Analyze3DConfig = field(default_factory=Analyze3DConfig)
     calibration: str = "calibration.json"
     log: str = "shots.csv"
 
