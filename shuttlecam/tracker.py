@@ -51,6 +51,10 @@ class Shot:
     smoothed: list[tuple[float, float, float, float, float]] = field(default_factory=list)
     # True when this is a faster reading of the flight reported just before it.
     replaces_previous: bool = False
+    # How far the detections sit from the smoothed path, in measurement standard
+    # deviations (RMS). A shuttle flies a clean curve and scores well under 1;
+    # arms, legs and rackets jump about and score higher.
+    jitter: float = 0.0
 
     @property
     def n_points(self) -> int:
@@ -88,8 +92,8 @@ class Tracker:
         else:
             raise ValueError(f"tracker model must be 'drag' or 'cv', not {cfg.model!r}")
         self.tracks: list[Track] = []
-        # Unmatched detections from recent frames: (t, z, R, blob area in pixels).
-        self.seeds: list[tuple[float, np.ndarray, np.ndarray, int]] = []
+        # Unmatched detections from recent frames: (t, z, R, blob area, near a player).
+        self.seeds: list[tuple[float, np.ndarray, np.ndarray, int, bool]] = []
         self.last_t: float | None = None
         self.last_shot: Shot | None = None
 
@@ -99,11 +103,13 @@ class Tracker:
         cfg = self.cfg
         measurements = []
         areas = []
+        near_player = []
         for d in detections:
             z = self.cal.to_world(d.x, d.y)
             R = self.cal.measurement_cov(d.x, d.y, cfg.pixel_noise)
             measurements.append((z, R))
             areas.append(d.area)
+            near_player.append(d.near_player)
 
         for track in self.tracks:
             track.ekf.predict(t)
@@ -148,7 +154,11 @@ class Tracker:
         # Detections inside any track's gate are not used to start new tracks: they
         # are usually a second fragment of a shuttle that is already being tracked.
         near_a_track = {mi for _, _, mi in pairs}
-        leftovers = [(t, z, R, areas[mi]) for mi, (z, R) in enumerate(measurements) if mi not in near_a_track]
+        leftovers = [
+            (t, z, R, areas[mi], near_player[mi])
+            for mi, (z, R) in enumerate(measurements)
+            if mi not in near_a_track
+        ]
         self._seed(t, leftovers)
         return [s for s in (self._emit(s) for s in shots) if s is not None]
 
@@ -169,6 +179,9 @@ class Tracker:
         starts a candidate track: pairs from the previous frame first, then the
         most similar blob sizes. A wrong pair predicts the next position badly,
         misses, and is gone within two frames.
+
+        The newer detection of a pair must be away from the players. The older one
+        may be next to a player: that is often the shuttle coming off the racket.
         """
         cfg = self.cfg
         lo = cfg.min_speed_kmh / KMH
@@ -178,8 +191,10 @@ class Tracker:
         frame_dt = t - self.last_t if self.last_t is not None and t > self.last_t else 0.02
         self.seeds = [s for s in self.seeds if 0 < t - s[0] < 2.5 * frame_dt]
         candidates = []
-        for _, z, R, area in leftovers:
-            for t0, z0, R0, area0 in self.seeds:
+        for _, z, R, area, near in leftovers:
+            if near:
+                continue
+            for t0, z0, R0, area0, _ in self.seeds:
                 size_change = abs(math.log(area / area0))
                 if size_change > math.log(4):  # a shuttle's blob doesn't change size that much
                     continue
@@ -303,9 +318,14 @@ class Tracker:
             if tb > ta:
                 raw_peak = max(raw_peak, dist / (tb - ta) * KMH)
 
+        d2 = [float((z - x[:2]) @ np.linalg.solve(R, z - x[:2])) for (_, z, R), x in zip(fitted, xs)]
+        jitter = math.sqrt(sum(d2) / (2 * len(d2)))
+
         if path < cfg.min_path_m or not cfg.min_speed_kmh <= peak <= cfg.max_speed_kmh:
             return None
-        return Shot(peak, raw_peak, meas[0][0], meas[-1][0], meas, smoothed)
+        if jitter > cfg.max_jitter:
+            return None  # too jagged for a shuttle: an arm, a leg or a racket
+        return Shot(peak, raw_peak, meas[0][0], meas[-1][0], meas, smoothed, jitter=jitter)
 
     def _emit(self, shot: Shot) -> Shot | None:
         """Merge a shot with the previous one if it looks like the same flight.

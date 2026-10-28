@@ -22,6 +22,8 @@ max_area = 250           # bigger blobs (players) are ignored
 dilate = 1
 max_detections = 8
 ignore_rects = []        # e.g. [[260, 0, 60, 40]] to mask the P10 display if it's in view
+player_area = 600        # motion blobs bigger than this are people
+player_margin = 0        # pixels around a person where blobs can't start a track (0 = off; try 10-15)
 
 [tracker]
 model = "drag"           # "drag" (EKF with air drag) or "cv" (constant velocity, needs accel_noise ~500)
@@ -39,6 +41,7 @@ max_duration_s = 2.0
 min_speed_kmh = 50.0
 max_speed_kmh = 450.0
 min_path_m = 0.6
+max_jitter = 1.0         # reject jagged tracks (limbs, rackets); try 0.6 for crowded match footage
 merge_gap_s = 0.3
 
 [display]

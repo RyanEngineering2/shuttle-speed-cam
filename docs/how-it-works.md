@@ -11,6 +11,7 @@ measure than it sounds, and what the code does about it.
 - [5. Smoothing, and the frame before the hit](#5-smoothing-and-the-frame-before-the-hit)
 - [6. How well it works (simulated)](#6-how-well-it-works-simulated)
 - [7. Limits](#7-limits)
+- [8. Match footage, tested on a real rally](#8-match-footage-tested-on-a-real-rally)
 
 ## 1. A shuttle is not a ball
 
@@ -76,7 +77,8 @@ Other details:
   change in mean brightness before comparing.
 - **Blob size.** Motion pixels are grouped into connected blobs. Size limits use
   the pixels that really changed, so a single noisy pixel can't pass as a shuttle,
-  and anything player-sized is dropped.
+  and anything player-sized is dropped. In player-aware mode, small blobs right
+  next to a player are flagged too (see [section 8](#8-match-footage-tested-on-a-real-rally)).
 - **Sub-pixel centroids.** Each blob's centre is weighted by how much each pixel
   changed. That's sharper than the plain blob centre.
 - **Speed on the Pi.** Everything stays in 8-bit OpenCV calls, which use SIMD on
@@ -209,3 +211,57 @@ model. Comparing against a radar gun is on the [roadmap](../README.md#roadmap).
 - **The display.** A P10 panel in view flickers at its scan rate and changes when
   a speed appears. Keep it out of the frame, or mask it with
   `detector.ignore_rects`.
+
+## 8. Match footage, tested on a real rally
+
+The simulator is clean. Real match footage is not: two players lunge and swing
+next to the shuttle, and a packed crowd moves behind it. To see what happens, the
+tracker was run on one 22-second rally from a public 60 fps fan recording
+([Shi Yuqi vs Kento Momota](https://www.youtube.com/watch?v=7d3CMWflzzQ), 1:00–1:22,
+1080p). The footage is not included in this repository. It was filmed from the
+front row behind one baseline, so the shuttle flies mostly toward or away from the
+camera.
+
+**Detection works.** The shuttle shows up even in front of the crowd. The trouble
+is clutter: a lunging player breaks up into dozens of small moving blobs (hands,
+feet, the racket) every frame, and each looks like a shuttle on its own. Out of
+the box, the tracker found 1 shuttle flight and 8 junk tracks that wandered around
+the players.
+
+Two additions fixed most of that:
+
+- **Player-aware detection** (`detector.player_margin`). Motion blobs bigger than
+  `player_area` pixels count as people. Small blobs within the margin around them
+  are flagged, and the tracker lets a flagged blob *continue* a track but never
+  *start* one. A pair whose older point is next to a player can still start a
+  track, because that is usually the shuttle leaving the racket.
+- **Jitter check** (`tracker.max_jitter`). After smoothing, the RMS distance of the
+  detections from the smoothed path, in units of the expected detector noise. A
+  shuttle flies a clean curve; limbs jump about.
+
+  | | Jitter |
+  |---|---|
+  | Simulated shuttle tracks (30 random smashes) | 0.04 – 0.16 |
+  | Real shuttle flights in the rally | 0.07 – 0.42 |
+  | Junk tracks around the players and in the crowd | 0.76 – 1.28 |
+
+  The default limit of 1.0 only catches wild junk. Use 0.6 for crowded footage.
+
+With both on (`player_margin = 12`, `max_jitter = 0.6` at 960 px wide), the rally
+gave 4 clean shuttle flights and no junk tracks. Neither setting changes any of
+the simulated results above.
+
+**What still doesn't work on this footage:**
+
+- **Speed.** From behind the baseline the shuttle moves mostly in depth, so the
+  single-plane calibration in section 3 can't apply. That needs a 3D mode: work
+  out the camera's pose from the court lines and net height, then fit the
+  shuttle's 3D path with the drag model.
+- **Shots close to the players.** All the flights found were lifts and clears
+  above the players. Fast flat shots and smashes pass through the players' motion
+  and were mostly missed. The tested rally had no clear smash, so this needs more
+  footage to work on.
+- **Short visible flights.** A high clear that leaves the top of the frame within
+  a few frames never reaches `min_hits` points.
+- **Camera drift.** A handheld or re-framed camera moves between rallies, so the
+  background and any calibration need resetting when it does.

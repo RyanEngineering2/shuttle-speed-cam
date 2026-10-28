@@ -53,6 +53,11 @@ A shuttle is not a ball. Its feathers give it a terminal velocity of only about
 
 The full write-up, with the math: **[docs/how-it-works.md](docs/how-it-works.md)**.
 
+For match footage with players close to the shuttle, a **player-aware mode** stops
+arms, legs and rackets from starting tracks, and a **jitter check** rejects tracks
+too jagged to be a shuttle. Both were tuned on a real 60 fps rally; see
+[match footage](docs/how-it-works.md#8-match-footage-tested-on-a-real-rally).
+
 ## Results (simulated)
 
 The repo includes a simulator ([`shuttlecam/sim.py`](shuttlecam/sim.py)) that
@@ -99,7 +104,7 @@ pip install -e ".[dev]"
 shuttlecam simulate -o smash.mp4 --speed 250            # render a 250 km/h smash
 shuttlecam analyze smash.mp4 --calibration smash.calibration.json --plot shot.png
 #   shot 1:  245.2 km/h   (frame-to-frame peak 237 km/h, 45 points, t=0.080s)
-pytest                                                   # 35 tests, a few seconds
+pytest                                                   # 46 tests, a few seconds
 ```
 
 ### On your own slow-motion video
@@ -165,6 +170,8 @@ tests/                 unit tests plus end-to-end tests on simulated clips
 ## Roadmap
 
 - [ ] Validate against a radar gun in a real hall
+- [ ] A 3D mode for end-on match footage: calibrate the camera from the court lines and fit the shuttle's 3D path ([details](docs/how-it-works.md#8-match-footage-tested-on-a-real-rally))
+- [ ] Catch smashes and drives close to the players in match footage
 - [ ] Learn the shuttle's terminal velocity from its own tracks (feather vs nylon)
 - [ ] Two cameras for 3D tracking, removing the flight-plane assumption
 - [ ] A small web page on the Pi with the session's shot list and best smashes

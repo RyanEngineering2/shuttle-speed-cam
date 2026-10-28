@@ -14,6 +14,13 @@ Plain three-frame differencing (current vs. the two previous frames) is the usua
 cheap alternative, but it fires on the spot where a slow shuttle sat in *both*
 earlier frames, which put a fake point right at the start of tracks.
 
+Players. In match footage the players' arms, legs and rackets break up into
+dozens of small moving blobs every frame, and each one looks like a shuttle on its
+own. With `player_margin` set, any motion blob bigger than `player_area` counts as
+a person, and small blobs within the margin around it are flagged `near_player`.
+The tracker lets a flagged blob continue a shuttle track that is already running,
+but never start a new one.
+
 It is deliberately simple. A Pi Zero 2 W has a few milliseconds per frame at
 200 fps, and the tracker downstream is what rejects players, rackets and noise.
 """
@@ -34,6 +41,7 @@ class Detection:
     y: float
     area: int  # pixels in the motion blob
     strength: float  # summed brightness change, used to rank candidates
+    near_player: bool = False  # right next to a player-sized blob (see module docs)
 
 
 class MotionDetector:
@@ -92,6 +100,7 @@ class MotionDetector:
             mask = cv2.dilate(mask, self.kernel, iterations=self.cfg.dilate)
 
         n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        players = self._player_zones(stats, mask.shape)
         detections = []
         for i in range(1, n):
             x, y, w, h, grown = stats[i]
@@ -110,13 +119,22 @@ class MotionDetector:
             # plain blob centroid, which the dilation above smears out.
             total = float(weights.sum())
             ys, xs = np.mgrid[y : y + h, x : x + w]
-            detections.append(
-                Detection(
-                    x=float((weights * xs).sum() / total),
-                    y=float((weights * ys).sum() / total),
-                    area=int(area),
-                    strength=total,
-                )
-            )
-        detections.sort(key=lambda d: d.strength, reverse=True)
+            cx = float((weights * xs).sum() / total)
+            cy = float((weights * ys).sum() / total)
+            near = players is not None and bool(players[int(cy), int(cx)])
+            detections.append(Detection(x=cx, y=cy, area=int(area), strength=total, near_player=near))
+        # Keep the strongest candidates, but those away from players first: next to a
+        # lunging player, limbs would otherwise fill the list every frame.
+        detections.sort(key=lambda d: (d.near_player, -d.strength))
         return detections[: self.cfg.max_detections]
+
+    def _player_zones(self, stats: np.ndarray, shape) -> np.ndarray | None:
+        """Mask of the areas around player-sized motion, or None if turned off."""
+        margin = self.cfg.player_margin
+        if margin <= 0:
+            return None
+        zones = np.zeros(shape, np.uint8)
+        for x, y, w, h, grown in stats[1:]:
+            if grown > self.cfg.player_area:
+                cv2.rectangle(zones, (x - margin, y - margin), (x + w + margin, y + h + margin), 1, -1)
+        return zones

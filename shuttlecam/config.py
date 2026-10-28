@@ -50,6 +50,12 @@ class DetectorConfig:
     # Dilation passes that join the fragments of a motion-blurred shuttle.
     dilate: int = 1
     max_detections: int = 8
+    # Player-aware mode, for match footage with players close to the shuttle. Motion
+    # blobs bigger than `player_area` pixels are treated as people, and small blobs
+    # within `player_margin` pixels of one can continue a track but not start one.
+    # 0 turns it off.
+    player_area: int = 600
+    player_margin: int = 0
     # Regions to ignore, [x, y, w, h] in processed-frame pixels. Use it for anything
     # that flickers or moves on its own, like the P10 display itself.
     ignore_rects: list[list[int]] = field(default_factory=list)
@@ -83,6 +89,10 @@ class TrackerConfig:
     max_speed_kmh: float = 450.0
     # A shot must travel at least this far, which filters out jittery false tracks.
     min_path_m: float = 0.6
+    # How far, on average, detections may sit from the smoothed path, in units of
+    # `pixel_noise`. A shuttle flies a clean curve and scores well under this; arms,
+    # legs and rackets jump about and score higher. Try 0.6 for crowded match footage.
+    max_jitter: float = 1.0
     # A track that starts this soon after the last shot is treated as the same
     # flight (the tracker lost it for a moment) and only counts if it is faster.
     merge_gap_s: float = 0.3
