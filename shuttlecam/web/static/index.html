@@ -69,15 +69,39 @@
       <ul id="clips" class="list"></ul>
     </div>
 
-    <details class="card tips">
-      <summary>How to film</summary>
-      <ol>
-        <li>Phone on a stand behind one baseline, sideways (landscape), with the court lines and both net posts in view.</li>
-        <li>Don't move it between clips. If you do, pick "New camera spot".</li>
-        <li>Film at 60 fps or faster. 1080p is plenty.</li>
-        <li>Trim each clip to start about a second before the smash, with the shuttle coming in, and end after it lands.</li>
+    <details class="card tips" id="guide">
+      <summary>Where to put the phone</summary>
+      <img class="diagram" src="/static/guide-side.svg" width="360" height="172"
+           alt="Side view: the phone on a stand about 2 m high, at least 6 m behind your baseline (3.5 m with the 0.5× lens), aimed level, so it sees the whole court and a shuttle 4.5 m up just in front of you.">
+      <ul class="checks">
+        <li><b>Behind the smasher.</b> Film from behind the player whose smash you're measuring, near the middle (up to a metre to one side is fine). Smashes flying away from the camera measure far better than ones coming toward it.</li>
+        <li><b>6 m or more behind the baseline</b> with the normal 1× camera, or <b>3.5 m or more</b> with the 0.5× ultra-wide when the hall is tight. Not much more than 10 m back, and not up on a balcony: from far away the phone can't judge distance, and the speed comes out wrong.</li>
+        <li><b>About 2 m high, aimed level.</b> A raised tripod, about a tall person's head height. On a lower stand (1.5 m) tilt up a little; higher up (2.5 m), tilt down a little.</li>
+        <li><b>Landscape, 60 fps or more, 1080p.</b> Don't zoom, and keep the phone still between clips.</li>
+      </ul>
+      <div class="pair">
+        <img class="diagram top" src="/static/guide-top.svg" width="200" height="262"
+             alt="From above: the phone behind the smasher near the middle of the court, seeing both sidelines; the smash flies away from it.">
+        <div>
+          <img class="diagram" src="/static/guide-frame.svg" width="320" height="180"
+               alt="On your phone: your baseline just above the bottom edge, the whole court, both net posts, and space above for a shuttle 4.5 m up.">
+          <p class="small">On screen: your baseline just above the bottom edge, both net posts with their tops, the far baseline, and lots of space above. A shuttle 4.5 m above your back court must still be in the picture.</p>
+        </div>
+      </div>
+
+      <h3>Wide or fisheye lens?</h3>
+      <ul class="checks">
+        <li class="ok"><b>The phone's own 0.5× ultra-wide: yes.</b> Phones straighten its picture automatically (iPhone: Settings › Camera › Lens Correction, on by default). Use it when there's less than 6 m behind the court.</li>
+        <li class="no"><b>Clip-on fisheye lenses and action-cam fisheye modes: no.</b> They bend straight lines. In a test, a 150° fisheye read a 320 km/h smash as 366, and the ultra-wide with its correction switched off read 339. On a GoPro, use Linear.</li>
+        <li><b>How to tell:</b> when you mark the court, the red lines must sit on the real ones right to the edges. If they peel away near the corners, the lens is bending the picture.</li>
+      </ul>
+
+      <h3>Each clip</h3>
+      <ul class="checks">
+        <li>Trim it to start about a second before the smash, with the shuttle coming in, and end after it lands.</li>
         <li>Upload the original from your camera roll, not a copy sent through a chat app: recompression can wipe out the shuttle.</li>
-      </ol>
+        <li>Moved the phone? Pick "New camera spot" on the next upload.</li>
+      </ul>
     </details>
     <p id="footer" class="muted small center"></p>
   </section>

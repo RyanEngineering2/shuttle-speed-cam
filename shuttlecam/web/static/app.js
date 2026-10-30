@@ -20,6 +20,9 @@ const GUIDE = [
 ];
 const TITLE = Object.fromEntries(GUIDE.map(([n, t]) => [n, t]));
 const MIN_POINTS = 6;
+// Court fits looser than this (px RMS) usually mean a bending lens: a 150° fisheye
+// fitted to 12 px in testing, a lens-corrected phone camera to about 1-3 px.
+const LOOSE_FIT_PX = 6;
 
 const $ = (id) => document.getElementById(id);
 const S = { state: null, view: null, timer: null, cal: null, resultId: null, tab: "recent" };
@@ -136,7 +139,15 @@ function renderHome() {
     body.append(row);
   } else {
     body.append(el("p", "muted", "No camera spot yet. Your first upload sets one up: you'll mark a few court points on it."));
+    const link = el("button", "link", "Where to put the phone ↓");
+    link.onclick = () => {
+      $("guide").open = true;
+      $("guide").scrollIntoView({ behavior: "smooth" });
+    };
+    body.append(link);
   }
+  // Open the set-up guide for newcomers, until they open or close it themselves.
+  if (!S.guideTouched) $("guide").open = !st.active_setup;
   $("footer").textContent = `Shuttle drag: terminal velocity ${st.terminal_velocity.toFixed(2)} m/s`;
   renderClips();
 }
@@ -435,6 +446,11 @@ function showCheck(setup) {
   $("check-text").textContent = `The points fit to ${setup.rms_px} px. The camera is ${where}.`;
   const list = $("check-worst");
   list.replaceChildren();
+  if (setup.rms_px > LOOSE_FIT_PX) {
+    list.append(el("li", "warn",
+      "That's a loose fit. A fisheye lens (or a point marked in the wrong place) does this, " +
+      "and speeds from this spot could be 10% or more off. Check the points, or film without the fisheye."));
+  }
   Object.entries(setup.errors_px)
     .filter(([, e]) => e > Math.max(5, 3 * setup.rms_px))
     .sort((a, b) => b[1] - a[1])
@@ -591,6 +607,7 @@ function wire() {
     }
   };
   setupStage();
+  $("guide").querySelector("summary").addEventListener("click", () => { S.guideTouched = true; });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && S.view !== "login") refresh();
   });

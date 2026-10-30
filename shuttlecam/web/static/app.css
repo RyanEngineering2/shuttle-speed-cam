@@ -154,3 +154,16 @@ img.plot { background: #fff; }
 .details { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; text-align: left; margin: 16px 0 8px; }
 .details dt { color: var(--muted); }
 .details dd { margin: 0; font-weight: 600; }
+
+/* camera placement guide */
+.diagram { display: block; width: 100%; height: auto; border-radius: 10px; margin: 10px 0; }
+.diagram.top { max-width: 220px; margin: 10px auto; }
+.pair { display: grid; gap: 4px 14px; align-items: center; }
+@media (min-width: 560px) { .pair { grid-template-columns: 200px 1fr; } }
+.tips h3 { font-size: 16px; margin: 16px 0 4px; }
+.checks { list-style: none; padding: 0; margin: 6px 0; }
+.checks li { position: relative; padding-left: 24px; margin: 8px 0; }
+.checks li::before { content: "•"; position: absolute; left: 7px; color: var(--accent); font-weight: 900; }
+.checks li.ok::before { content: "✓"; left: 4px; }
+.checks li.no::before { content: "✗"; left: 4px; color: var(--error); }
+.warn { color: var(--warn); font-weight: 600; }

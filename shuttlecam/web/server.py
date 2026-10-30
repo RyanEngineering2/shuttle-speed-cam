@@ -515,7 +515,7 @@ def serve(
         + (f" (from {config_path})" if config_path else "")
     )
     if host == "127.0.0.1":
-        print("  phones reach it through Tailscale Funnel: tailscale funnel --bg " + str(port))
+        print(f"  phones with the Tailscale app reach it after: tailscale serve --bg {port}")
     sys.stdout.flush()  # show this now even when the output goes to a file or a pipe
     _keep_awake(True)
     try:

@@ -102,3 +102,14 @@ def test_upload_mark_the_court_and_measure(client, tmp_path):
 
     assert client.delete(f"/api/clips/{clip['id']}", headers=HEADER).status_code == 200
     assert client.get(f"/api/clips/{clip['id']}").status_code == 404
+
+
+def test_the_camera_guide_pictures_are_served(client):
+    import xml.etree.ElementTree as ET
+
+    page = client.get("/").get_data(as_text=True)
+    for name in ("guide-side.svg", "guide-top.svg", "guide-frame.svg"):
+        assert f"/static/{name}" in page
+        r = client.get(f"/static/{name}")
+        assert r.status_code == 200
+        assert ET.fromstring(r.get_data()).tag.endswith("svg")  # well-formed

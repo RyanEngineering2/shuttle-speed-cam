@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 172" role="img" aria-label="Side view: phone 2 m high, 6 m behind your baseline, aimed level">
+<rect width="360" height="172" rx="10" fill="#0e1f17"/>
+<polygon points="36.5,102.0 118.9,132.0 352.0,132.0 352.0,6.0 274.1,6.0" fill="#facc15" fill-opacity=".16"/>
+<line x1="36.5" y1="102.0" x2="118.9" y2="132.0" stroke="#facc15" stroke-width="1.2" stroke-dasharray="4 3"/>
+<line x1="36.5" y1="102.0" x2="274.1" y2="6.0" stroke="#facc15" stroke-width="1.2" stroke-dasharray="4 3"/>
+<line x1="14.0" y1="132.0" x2="352.0" y2="132.0" stroke="#3f4a44" stroke-width="3"/>
+<line x1="129.5" y1="132.0" x2="330.5" y2="132.0" stroke="#15803d" stroke-width="5"/>
+<line x1="230.0" y1="132.0" x2="230.0" y2="108.8" stroke="#ffffff" stroke-width="2"/>
+<rect x="228.5" y="108.8" width="3" height="11.4" fill="#ffffff" opacity=".5"/>
+<line x1="129.5" y1="128.0" x2="129.5" y2="136.0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="129.5" y="149.0" font-size="10.8" fill="#9fb3a7" text-anchor="middle" font-weight="400" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">your baseline</text>
+<line x1="330.5" y1="128.0" x2="330.5" y2="136.0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="330.5" y="149.0" font-size="10.8" fill="#9fb3a7" text-anchor="middle" font-weight="400" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">far baseline</text>
+<text x="230.0" y="149.0" font-size="10.8" fill="#9fb3a7" text-anchor="middle" font-weight="400" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">net</text>
+<circle cx="158.8" cy="106.2" r="3.2" fill="#e5efe8"/>
+<path d="M158.8 108.8 L158.8 117.8 M158.8 117.8 L154.3 132.0 M158.8 117.8 L163.2 132.0 M158.8 110.2 L162.5 90.0" stroke="#e5efe8" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+<path d="M210.5 6.0 Q171.5 48.0 162.5 90.0" stroke="#9fb3a7" stroke-width="1.3" fill="none" stroke-dasharray="3 3"/>
+<polyline points="162.5,90.0 174.1,92.1 183.9,93.8 192.4,95.3 199.9,96.7 206.6,97.9 212.6,99.1 218.2,100.1 223.3,101.1 228.0,102.0 232.3,102.8 236.4,103.7 240.3,104.5 243.9,105.2 247.3,105.9 250.6,106.6 253.7,107.3 256.6,108.0 259.4,108.6 262.1,109.2 264.7,109.9 267.2,110.5 269.6,111.1 271.9,111.7 274.1,112.3 276.2,112.8 278.3,113.4 280.3,114.0 282.2,114.5 284.1,115.1 285.9,115.6 287.7,116.2 289.4,116.7 291.1,117.3 292.8,117.8 294.3,118.4 295.9,118.9 297.4,119.5 298.9,120.0 300.3,120.6 301.7,121.1 303.1,121.7 304.4,122.3 305.7,122.8 307.0,123.4 308.3,123.9 309.5,124.5 310.7,125.0 311.9,125.6 313.0,126.2 314.2,126.7 315.3,127.3 316.4,127.9 317.5,128.5 318.5,129.1 319.5,129.6 320.5,130.2 321.5,130.8 322.5,131.4 323.5,132.0" fill="none" stroke="#fb7185" stroke-width="2"/>
+<circle cx="323.5" cy="132.0" r="2.5" fill="#fb7185"/>
+<text x="168.5" y="86.0" font-size="11.475000000000001" fill="#fb7185" text-anchor="start" font-weight="600" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">smash</text>
+<line x1="130.0" y1="64.5" x2="150.0" y2="64.5" stroke="#facc15" stroke-width="1.5"/>
+<text x="127.0" y="67.5" font-size="10.8" fill="#facc15" text-anchor="end" font-weight="400" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">4.5 m up: still in view</text>
+<path d="M36.5 103.5 L29.0 132.0 M36.5 103.5 L44.0 132.0 M36.5 103.5 L36.5 132.0" stroke="#93c5fd" stroke-width="1.2" fill="none"/>
+<rect x="34.5" y="97.0" width="4" height="10" rx="1" fill="#93c5fd" stroke="#93c5fd"/>
+<path d="M77.0 103.5 L69.5 132.0 M77.0 103.5 L84.5 132.0 M77.0 103.5 L77.0 132.0" stroke="#9fb3a7" stroke-width="1.2" fill="none" stroke-dasharray="2 2"/>
+<rect x="75.0" y="97.0" width="4" height="10" rx="1" fill="#0e1f17" stroke="#9fb3a7" stroke-dasharray="2 2"/>
+<text x="72.0" y="106.0" font-size="10.8" fill="#9fb3a7" text-anchor="end" font-weight="400" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">0.5×</text>
+<text x="36.5" y="93.0" font-size="11.475000000000001" fill="#93c5fd" text-anchor="middle" font-weight="700" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">1×</text>
+<line x1="26.5" y1="132.0" x2="26.5" y2="102.0" stroke="#93c5fd" stroke-width="1"/>
+<text x="23.5" y="120.0" font-size="11.475000000000001" fill="#93c5fd" text-anchor="end" font-weight="700" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">2 m</text>
+<path d="M36.5 165.0 L129.5 165.0 M36.5 162.0 v6 M129.5 162.0 v6" stroke="#93c5fd" stroke-width="1"/>
+<text x="83.0" y="161.0" font-size="10.8" fill="#93c5fd" text-anchor="middle" font-weight="400" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">6 m+ (1×) · 3.5 m+ (0.5×)</text>
+<text x="90.5" y="105.0" font-size="10.8" fill="#facc15" text-anchor="start" font-weight="400" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">→ aim level</text>
+<text x="348.0" y="18.0" font-size="9.450000000000001" fill="#9fb3a7" text-anchor="end" font-weight="700" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">SIDE VIEW</text>
+</svg>

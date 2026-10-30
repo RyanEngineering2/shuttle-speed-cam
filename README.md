@@ -121,7 +121,7 @@ pip install -e ".[dev]"
 shuttlecam simulate -o smash.mp4 --speed 250            # render a 250 km/h smash
 shuttlecam analyze smash.mp4 --calibration smash.calibration.json --plot shot.png
 #   shot 1:  245.2 km/h   (frame-to-frame peak 237 km/h, 45 points, t=0.080s)
-pytest                                                   # 69 tests, about a minute
+pytest                                                   # 70 tests, about a minute
 ```
 
 ### On your own slow-motion video
@@ -149,13 +149,14 @@ See [docs/3d-mode.md](docs/3d-mode.md).
 
 ```bash
 pip install -e ".[web]"
-shuttlecam serve                      # prints the passcode; then: tailscale funnel --bg 8000
+shuttlecam serve                      # prints the passcode; then: tailscale serve --bg 8000
 ```
 
 The PC that runs this does the work; phones open its page, mark the court once
 on a frame from their first clip, then upload trimmed clips and get the smash speed
-back in about a minute, with a best-per-player list. Setup, remote access and
-filming tips: [docs/web-app.md](docs/web-app.md).
+back in about a minute, with a best-per-player list. The page shows where to put
+the phone (to scale: behind the smasher, 6 m back, 2 m up, aimed level) and which
+lenses work. Setup, remote access and filming tips: [docs/web-app.md](docs/web-app.md).
 
 ### On the Raspberry Pi
 
