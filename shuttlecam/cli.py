@@ -273,7 +273,9 @@ def _print_shot(i: int, shot, frame_of) -> None:
     if shot.launch_reliable:
         print(f"  launch speed   {f.speed_kmh:4.0f} km/h   (range {lo:.0f}-{hi:.0f})")
     elif shot.launch_known:
-        print(f"  launch speed   not reliable (anywhere from {lo:.0f} to {hi:.0f} km/h)")
+        print(
+            f"  launch speed   {f.speed_kmh:4.0f} km/h   best fit, but not reliable: anywhere from {lo:.0f} to {hi:.0f}"
+        )
     else:
         print("  launch speed   unknown: the hit wasn't seen (no incoming shuttle; try --contact)")
     ms = (f.first_seen_time - f.contact_time) * 1000
@@ -299,11 +301,44 @@ def _print_shot(i: int, shot, frame_of) -> None:
         else "depth well determined"
     )
     print(f"  fit            {f.rms_px:.2f} px RMS; {note}")
-    if f.distance_ratio < 1.5 and not shot.anchored:
+    if f.distance_ratio < 1.5 and not shot.anchored and not shot.launch_reliable:
         print(
             f"  view           little perspective: the shuttle's distance from the camera only changes "
             f"{f.distance_ratio:.1f}x,\n                 so depth rests on physics. Add --takeoff and --landing to anchor both ends."
         )
+
+
+def _calibrate_drag(args, cam, shot, vt: float, fit_inputs: dict, source_name: str) -> None:
+    """--known-speed: tune the shuttle's drag so `shot` leaves the racket at that speed."""
+    from .config import save_terminal_velocity
+    from .fit3d import calibrate_terminal_velocity
+
+    before = shot.fit
+    print(f"Tuning the shuttle's drag so this shot leaves the racket at {args.known_speed:.0f} km/h...")
+    try:
+        vt_new, fit = calibrate_terminal_velocity(
+            cam, shot.track.observations, args.known_speed, terminal_velocity=vt, **fit_inputs
+        )
+    except ValueError as e:
+        sys.exit(f"--known-speed: {e}")
+    shot.fit = fit
+    print(
+        f"  terminal velocity  {vt_new:.2f} m/s (was {vt:.2f}): "
+        f"launch speed {fit.speed_kmh:.0f} km/h (was {before.speed_kmh:.0f})"
+    )
+    print(
+        f"  hit height         {fit.contact[2]:.2f} m (was {before.contact[2]:.2f}): check it still looks right"
+    )
+    if not 6.4 <= vt_new <= 7.0:
+        print(
+            "  note               feather shuttles are usually 6.5-6.9 m/s. A value this far off can mean\n"
+            "                     the known speed, the hints or the video's timing are off."
+        )
+    if args.save_drag:
+        save_terminal_velocity(args.save_drag, vt_new, f"--known-speed {args.known_speed:g} on {source_name}")
+        print(f"  saved to {args.save_drag}. Use it with: shuttlecam -c {args.save_drag} analyze3d ...")
+    else:
+        print("  not saved: add --save-drag drag.toml to keep it")
 
 
 def cmd_analyze3d(cfg: Config, args) -> None:
@@ -317,6 +352,8 @@ def cmd_analyze3d(cfg: Config, args) -> None:
     from .camera3d import CameraModel
     from .fit3d import fit_flight
 
+    if args.save_drag and not args.known_speed:
+        sys.exit("--save-drag goes with --known-speed")
     camera = CameraModel.load(args.camera)
     vt = cfg.tracker.terminal_velocity
     fps = args.fps
@@ -392,11 +429,17 @@ def cmd_analyze3d(cfg: Config, args) -> None:
     }
     hinted = contact_px is not None or anchored
     window = args.hit_window * frame_dt if args.hit_window else None
+    target = None  # the shot the hints are about
+
+    def fit_inputs(shot) -> dict:
+        incoming_obs = shot.incoming.observations if shot.incoming else None
+        return {"incoming": incoming_obs, "max_gap_s": window, **hints}
 
     if args.track:
         fit = fit_flight(cam, obs, terminal_velocity=vt, incoming=incoming, max_gap_s=window, **hints)
         shots = [Shot3D(ImageTrack(obs), ImageTrack(incoming) if incoming else None, fit, hinted=hinted)]
         shots[0].anchored = anchored
+        target = shots[0]
     else:
         if timing:
             print(
@@ -424,19 +467,26 @@ def cmd_analyze3d(cfg: Config, args) -> None:
             else:
                 target = max(shots, key=lambda s: s.fit.first_seen_kmh)
             target.fit = fit_flight(
-                cam,
-                target.track.observations,
-                terminal_velocity=vt,
-                incoming=target.incoming.observations if target.incoming else None,
-                max_gap_s=window,
-                **hints,
+                cam, target.track.observations, terminal_velocity=vt, **fit_inputs(target)
             )
             target.hinted = hinted
             target.anchored = anchored
 
-    shots = [s for s in shots if s.fit.first_seen_kmh >= args.min_speed or s.hinted]
-    shown = shots if args.all or args.track else [s for s in shots if s.reliable or s.hinted]
-    hidden = len(shots) - len(shown)
+    if args.known_speed:
+        if target is None:  # no hints: the fastest shot with a timed hit
+            timed = [s for s in shots if s.launch_known]
+            target = max(timed, key=lambda s: (s.reliable, s.fit.speed_kmh)) if timed else None
+        if target is None or not target.launch_known:
+            sys.exit(
+                "--known-speed needs a shot whose hit is timed: an incoming track, --contact, "
+                "or --takeoff with --landing"
+            )
+        _calibrate_drag(args, cam, target, vt, fit_inputs(target), Path(args.video or args.track).name)
+        shown, hidden = [target], 0
+    else:
+        shots = [s for s in shots if s.fit.first_seen_kmh >= args.min_speed or s.hinted]
+        shown = shots if args.all or args.track else [s for s in shots if s.reliable or s.hinted]
+        hidden = len(shots) - len(shown)
     if not shown:
         print("No shots found." + (f" ({hidden} poor fits hidden; --all shows them.)" if hidden else ""))
         return
@@ -526,6 +576,12 @@ def main(argv: list[str] | None = None) -> None:
         type=float,
         help="how many frames before the first sighting the hit may be (default 3)",
     )
+    p.add_argument(
+        "--known-speed",
+        type=float,
+        help="a launch speed you trust for this shot (km/h, e.g. from a radar gun): tunes the shuttle's drag to match",
+    )
+    p.add_argument("--save-drag", help="with --known-speed: save the tuned drag to this TOML file, for -c")
     p.add_argument("--plot", help="save a figure of the fastest shot")
     p.set_defaults(func=cmd_analyze3d)
 

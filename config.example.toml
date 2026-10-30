@@ -27,7 +27,7 @@ player_margin = 0        # pixels around a person where blobs can't start a trac
 
 [tracker]
 model = "drag"           # "drag" (EKF with air drag) or "cv" (constant velocity, needs accel_noise ~500)
-terminal_velocity = 6.7  # m/s; feather shuttles are about 6.5-6.9, nylon a bit higher
+terminal_velocity = 6.7  # m/s; feather shuttles are about 6.5-6.9, nylon a bit higher (tune: analyze3d --known-speed)
 gravity = 9.81
 pixel_noise = 1.5
 accel_noise = 30.0

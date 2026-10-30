@@ -2,7 +2,7 @@ import pytest
 
 from shuttlecam.camera import pick_sensor_mode, process_size
 from shuttlecam.cli import main
-from shuttlecam.config import load_config
+from shuttlecam.config import load_config, save_terminal_velocity
 from shuttlecam.display import SerialDisplay, speed_line, text_line
 
 
@@ -22,6 +22,25 @@ def test_config_overrides_and_rejects_typos(tmp_path):
 
 def test_example_config_loads():
     load_config("config.example.toml")
+
+
+def test_save_terminal_velocity_keeps_the_rest_of_the_file(tmp_path):
+    new = tmp_path / "drag.toml"
+    save_terminal_velocity(new, 7.244, "from a radar gun")
+    assert load_config(new).tracker.terminal_velocity == 7.24
+    assert "# from a radar gun" in new.read_text()
+
+    full = tmp_path / "config.toml"
+    full.write_text("[camera]\nfps = 120\n\n[tracker]  # the filter\nterminal_velocity = 6.7\ngate = 5.0\n")
+    save_terminal_velocity(full, 6.9)
+    cfg = load_config(full)
+    assert (cfg.tracker.terminal_velocity, cfg.tracker.gate, cfg.camera.fps) == (6.9, 5.0, 120)
+
+    no_tracker = tmp_path / "other.toml"
+    no_tracker.write_text("[display]\nbackend = 'serial'\n")
+    save_terminal_velocity(no_tracker, 6.5)
+    cfg = load_config(no_tracker)
+    assert (cfg.tracker.terminal_velocity, cfg.display.backend) == (6.5, "serial")
 
 
 def test_process_size_keeps_aspect():

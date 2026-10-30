@@ -99,7 +99,7 @@ def _integrate(p0, v0, t0: float, times: np.ndarray, k: float, g: float, h: floa
 
     order = np.argsort(times)
     for idx in order:
-        target = times[idx]
+        target = float(times[idx])  # plain floats: a wild trial step overflows quietly to inf
         while target - t > 1e-12:
             dt = min(h, target - t)
             a1 = acc(vx, vy, vz)
@@ -385,6 +385,84 @@ def fit_flight(
     fit.observations = list(all_obs)
     fit.first_point_was_racket = racket
     return fit
+
+
+def calibrate_terminal_velocity(
+    camera: CameraModel,
+    observations: list[Observation],
+    known_kmh: float,
+    terminal_velocity: float = 6.7,
+    tolerance_kmh: float = 0.5,
+    bounds: tuple[float, float] = (4.0, 10.0),
+    **fit_kwargs,
+) -> tuple[float, FlightFit]:
+    """The shuttle's terminal velocity that makes this shot's launch speed `known_kmh`.
+
+    For a shot whose speed you trust from elsewhere: a radar gun, or a broadcast
+    reading. Shuttles differ (feathers or nylon, wear, the air in the hall), and the
+    terminal velocity sets how much speed the fit assumes was lost before the first
+    sighting. Less drag, a lower launch speed for the same track. The launch speed
+    falls steadily as the terminal velocity rises, so a bracketed search finds the
+    match.
+
+    `fit_kwargs` go to `fit_flight` (incoming track, contact, take-off, landing...).
+    Returns the terminal velocity, rounded to 0.01 m/s, and the full fit at it.
+    """
+    lo_b, hi_b = bounds
+
+    def miss(vt: float) -> float:
+        # The search only needs the best fit: skip the ranges until the end.
+        fit = fit_flight(
+            camera,
+            observations,
+            terminal_velocity=vt,
+            profile_steps=0,
+            terminal_velocity_spread=0.0,
+            **fit_kwargs,
+        )
+        return fit.speed_kmh - known_kmh
+
+    a = min(max(float(terminal_velocity), lo_b), hi_b)
+    fa = miss(a)
+    best_vt, best_miss = a, fa
+    if abs(fa) > tolerance_kmh:
+        # Bracket the answer. Reading too fast means too much drag was assumed.
+        step = 0.25 if fa > 0 else -0.25
+        b, fb = a, fa
+        while fa * fb > 0:
+            nxt = min(max(b + step, lo_b), hi_b)
+            if nxt == b:
+                raise ValueError(
+                    f"no terminal velocity between {lo_b:g} and {hi_b:g} m/s gives {known_kmh:.0f} km/h"
+                )
+            a, fa = b, fb
+            b, fb = nxt, miss(nxt)
+            step *= 2
+        if abs(fb) < abs(best_miss):
+            best_vt, best_miss = b, fb
+        # Regula falsi, Illinois variant: halving a stuck end keeps it from stalling.
+        side = 0
+        for _ in range(20):
+            if abs(best_miss) <= tolerance_kmh or abs(b - a) < 1e-3:
+                break
+            c = (fa * b - fb * a) / (fa - fb)
+            fc = miss(c)
+            if abs(fc) < abs(best_miss):
+                best_vt, best_miss = c, fc
+            if fc * fb > 0:  # c is on b's side
+                b, fb = c, fc
+                if side == -1:
+                    fa /= 2
+                side = -1
+            elif fc * fa > 0:  # c is on a's side
+                a, fa = c, fc
+                if side == 1:
+                    fb /= 2
+                side = 1
+            else:
+                break
+    vt = round(best_vt, 2)
+    return vt, fit_flight(camera, observations, terminal_velocity=vt, **fit_kwargs)
 
 
 def _incoming_extrapolator(incoming: list[Observation], frame: float):

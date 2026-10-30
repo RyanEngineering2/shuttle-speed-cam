@@ -10,7 +10,7 @@ import pytest
 from shuttlecam.analyze3d import ImageTrack, analyze_3d, split_at_hits
 from shuttlecam.camera3d import CameraModel, calibrate_camera
 from shuttlecam.cli import main
-from shuttlecam.config import Analyze3DConfig
+from shuttlecam.config import Analyze3DConfig, load_config
 from shuttlecam.court import landmarks
 from shuttlecam.fit3d import Observation, fit_flight
 from shuttlecam.sim import Smash3DScene
@@ -195,6 +195,37 @@ def test_cli_calibrate3d_and_analyze3d_with_a_track(tmp_path, capsys):
     out = capsys.readouterr().out
     speed = float(out.split("launch speed")[1].split("km/h")[0])
     assert speed == pytest.approx(scene.speed_kmh, rel=0.05)
+
+
+def test_cli_known_speed_tunes_the_drag(tmp_path, capsys):
+    # This shuttle has more drag (terminal velocity 6.2 m/s) than the 6.7 assumed, so
+    # the plain fit reads it too slow. Given its true speed, the drag is tuned to match.
+    scene = Smash3DScene(size=(960, 540), terminal_velocity=6.2)
+    scene.camera.save(tmp_path / "camera.json")
+    for name, times in (
+        ("track", flight_frames(scene, first_frame_after_hit=3)),
+        ("in", incoming_frames(scene)),
+    ):
+        with open(tmp_path / f"{name}.csv", "w") as f:
+            f.write("frame,u,v\n")
+            f.writelines(f"{o.t * scene.fps:.2f},{o.u:.2f},{o.v:.2f}\n" for o in observe(scene, times))
+    args = ["analyze3d", "--camera", str(tmp_path / "camera.json"), "--fps", "60"]
+    args += ["--track", str(tmp_path / "track.csv"), "--incoming", str(tmp_path / "in.csv")]
+
+    def launch_speed(out):
+        return float(out.split("launch speed")[1].split("km/h")[0])
+
+    main(args)
+    assert launch_speed(capsys.readouterr().out) < 0.97 * scene.speed_kmh
+
+    drag = str(tmp_path / "drag.toml")
+    main([*args, "--known-speed", f"{scene.speed_kmh:.1f}", "--save-drag", drag])
+    out = capsys.readouterr().out
+    assert "terminal velocity" in out
+    assert load_config(drag).tracker.terminal_velocity == pytest.approx(6.2, abs=0.15)
+
+    main(["-c", drag, *args])  # the saved drag, used for the next run
+    assert launch_speed(capsys.readouterr().out) == pytest.approx(scene.speed_kmh, rel=0.01)
 
 
 # -- re-uploaded and broadcast footage -------------------------------------------------

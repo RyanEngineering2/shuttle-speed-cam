@@ -108,6 +108,26 @@ Use at least 6 landmarks spread across the frame, including a net post top or tw
 Calibrate per camera position: if the camera is moved or re-zoomed between
 rallies, calibrate again on a frame from the new position.
 
+### Tuning the drag to a known speed
+
+Shuttles differ (feathers or nylon, wear, the air in the hall), and the assumed
+terminal velocity (6.7 m/s) sets how much speed the fit thinks was lost before the
+first sighting. If you know one shot's speed from elsewhere, like a radar gun or a
+broadcast reading, tune the drag to it and save the result:
+
+```bash
+shuttlecam analyze3d smash.mp4 --camera camera.json ... --known-speed 476 --save-drag drag.toml
+shuttlecam -c drag.toml analyze3d next_rally.mp4 --camera camera.json   # uses the tuned drag
+```
+
+A search over the terminal velocity finds the value at which the shot's fitted
+launch speed matches (lower drag, lower launch speed for the same track), then
+saves it as `[tracker] terminal_velocity` in the TOML file, keeping anything else
+already in it. The report shows what else moved, like the height of the hit. Check
+that it still looks right, since a known speed with an error in it is absorbed
+into the drag. Feather shuttles are usually 6.5–6.9 m/s, and the report flags a
+value far outside that.
+
 ## How well it works
 
 **Synthetic smashes** ([`sim.Smash3DScene`](../shuttlecam/sim.py)): rendered
@@ -182,14 +202,29 @@ camera 26 m behind the court and 11.3 m up (court calibration: 34 landmarks,
 |---|---|
 | Automatic | no reliable shot (correct: little perspective, hit not seen) |
 | Anchored: take-off spot + landing, `--no-incoming` | launch **469–668 km/h** (best fit 622), flagged *not reliable*; hit at frame 336, 2.8 m high above the take-off spot; lands just past the near long service line |
+| Anchored, drag tuned with `--known-speed 476` | terminal velocity **7.24 m/s**; launch **477 km/h (370–534)**; hit at frame 339, 1.5 m high |
 
-The video's 476 km/h sits inside that range, at its low end, so the two agree
-within what this footage can resolve. The best-fit value itself is above any
+```bash
+shuttlecam analyze3d broadcast_smash.mp4 --camera broadcast_camera.json --end 6.27 \
+    --takeoff 1078,378 --landing 1316,953@371 --no-incoming --known-speed 476 --save-drag drag.toml
+```
+
+Untuned, the video's 476 km/h sits inside the range, at its low end, so the two
+agree within what this footage can resolve. The best fit of 622 is above any
 recorded smash, a sign the inputs (the exact take-off spot, the timing of a
-re-encoded broadcast) carry more error than the range shows. Matching 476 exactly
-by giving the shuttle less drag (terminal velocity 7.2 m/s) would also move the
-fitted hit down to 1.6 m, too low for a jump smash. So the drag model was left as
-it is rather than tuned to one clip.
+re-encoded broadcast) carry more error than the range shows.
+
+Tuned to 476, the fit needs a terminal velocity of 7.24 m/s, above the usual
+6.5–6.9 for feather shuttles, and the hit moves down to 1.5 m, low for a jump
+smash. With the same tuned drag, the Momota smash above reads 316 km/h (305–323)
+instead of 336. So the tuned value is a fit to this one reading rather than a
+measurement of the shuttle, and the default stays at 6.7 m/s. The tuned settings
+are kept in their own file (`drag.toml`) for use with `-c`.
+
+This clip is also fragile in another way: the shot is only ~12 frames long and
+needs the motion detector settled before it starts. Analyse the whole clip.
+Starting 1–3 s before the hit loses its first frames or the whole track, and moves
+the launch speed by over 100 km/h.
 
 ## Limits
 

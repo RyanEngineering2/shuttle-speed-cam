@@ -128,8 +128,15 @@ def find_repeated_frames(video_path: str, start: int = 0, end: int | None = None
     rel = d / typical
     if np.mean(rel < 0.1) < 0.25 or np.mean((rel >= 0.1) & (rel < 0.4)) > 0.03:
         return None
-    keep = [start] + [start + 1 + j for j, x in enumerate(rel) if x >= 0.1]
-    measured = (len(keep) - 1) / ((keep[-1] - keep[0]) / fps)
+    changed = [start + 1 + j for j, x in enumerate(rel) if x >= 0.1]
+    keep = [start] + changed  # the first frame we read may itself be a repeat; keep it anyway
+    if len(changed) < 3:
+        return None
+    # Real frames arrive every 2.4 file frames (25 in 60), as alternating gaps of 2
+    # and 3: the slope of a straight-line fit gives that spacing. Counting the first
+    # frame read as new would skew the rate on a short stretch.
+    spacing = float(np.polyfit(np.arange(len(changed)), changed, 1)[0])
+    measured = fps / spacing
     rate = min(STANDARD_RATES, key=lambda r: abs(r - measured))
     if abs(rate - measured) / measured > 0.04:
         rate = measured

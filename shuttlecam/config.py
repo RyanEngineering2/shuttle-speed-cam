@@ -163,3 +163,29 @@ def load_config(path: str | Path | None = None) -> Config:
         with open(path, "rb") as f:
             _apply(cfg, tomllib.load(f), "")
     return cfg
+
+
+def save_terminal_velocity(path: str | Path, value: float, note: str = "") -> None:
+    """Set `[tracker] terminal_velocity` in the TOML file at `path`, creating it if
+    needed and keeping everything else in it."""
+    path = Path(path)
+    line = f"terminal_velocity = {value:.2f}" + (f"  # {note}" if note else "")
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    section, header, done = None, None, False
+    for i, text in enumerate(lines):
+        s = text.strip()
+        if s.startswith("["):
+            section = s[1:].split("]")[0].strip()
+            if section == "tracker":
+                header = i
+        elif section == "tracker" and s.split("=")[0].strip() == "terminal_velocity":
+            lines[i] = line
+            done = True
+            break
+    if not done:
+        if header is None:
+            lines += ([""] if lines else []) + ["[tracker]", line]
+        else:
+            lines.insert(header + 1, line)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    load_config(path)  # still a valid config
