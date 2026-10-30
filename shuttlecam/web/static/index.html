@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14532d">
+<title>Smash Speed</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><img src="/static/icon.svg" alt="" width="28" height="28"> Smash Speed</div>
+  <button id="logout" class="link light" hidden>Log out</button>
+</header>
+
+<main>
+  <section id="view-login" class="view" hidden>
+    <form id="login-form" class="card">
+      <h2>Enter the passcode</h2>
+      <p class="muted">It's shown on the PC running the server.</p>
+      <input id="passcode" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Passcode" required>
+      <button class="primary wide" type="submit">Open</button>
+      <p id="login-error" class="error" hidden></p>
+    </form>
+  </section>
+
+  <section id="view-home" class="view" hidden>
+    <div class="card">
+      <h2>Measure a smash</h2>
+      <label class="field">Player
+        <input id="player" maxlength="40" placeholder="Name (optional)" autocomplete="nickname">
+      </label>
+      <label class="file">
+        <input id="video" type="file" accept="video/*">
+        <span id="video-label">Choose or record a clip</span>
+      </label>
+      <fieldset id="setup-choice" class="choice" hidden>
+        <label><input type="radio" name="setup" value="current" checked> Same camera spot as before</label>
+        <label><input type="radio" name="setup" value="new"> New camera spot</label>
+      </fieldset>
+      <details class="more">
+        <summary>Slow-motion clip?</summary>
+        <label class="field">Real frame rate
+          <select id="fps">
+            <option value="">From the file</option>
+            <option value="60">60 fps</option>
+            <option value="120">120 fps</option>
+            <option value="240">240 fps</option>
+          </select>
+        </label>
+        <p class="muted small">Only if the file plays in slow motion: it says 30 fps but was filmed at 120 or 240.</p>
+      </details>
+      <button id="upload" class="primary wide" disabled>Upload and measure</button>
+      <div id="progress" class="progress" hidden><div id="progress-bar"></div></div>
+      <p id="upload-error" class="error" hidden></p>
+    </div>
+
+    <div class="card">
+      <h2>Camera spot</h2>
+      <div id="setup-body"></div>
+    </div>
+
+    <div class="card">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="recent" role="tab">Recent</button>
+        <button class="tab" data-tab="best" role="tab">Best per player</button>
+      </div>
+      <ul id="clips" class="list"></ul>
+    </div>
+
+    <details class="card tips">
+      <summary>How to film</summary>
+      <ol>
+        <li>Phone on a stand behind one baseline, sideways (landscape), with the court lines and both net posts in view.</li>
+        <li>Don't move it between clips. If you do, pick "New camera spot".</li>
+        <li>Film at 60 fps or faster. 1080p is plenty.</li>
+        <li>Trim each clip to start about a second before the smash, with the shuttle coming in, and end after it lands.</li>
+        <li>Upload the original from your camera roll, not a copy sent through a chat app: recompression can wipe out the shuttle.</li>
+      </ol>
+    </details>
+    <p id="footer" class="muted small center"></p>
+  </section>
+
+  <section id="view-calibrate" class="view" hidden>
+    <div class="card">
+      <h2>Mark the court</h2>
+      <p class="muted small">Once per camera spot. Tap each point on the picture, then drag to fine-tune it. Skip any you can't see. You need at least 6, and a net post top helps a lot.</p>
+      <div class="guide">
+        <svg id="court-map" viewBox="0 0 80 150" aria-hidden="true"></svg>
+        <div>
+          <div class="muted small" id="cal-step"></div>
+          <div class="target" id="cal-name"></div>
+          <div class="small" id="cal-hint"></div>
+        </div>
+      </div>
+    </div>
+    <div id="stage" class="stage">
+      <img id="frame" alt="A frame from your clip">
+      <svg id="marks" aria-hidden="true"></svg>
+    </div>
+    <canvas id="loupe" width="180" height="180" hidden></canvas>
+    <div class="actions sticky">
+      <button id="cal-back">Back</button>
+      <button id="cal-skip">Skip</button>
+      <button id="cal-next" class="primary">Next</button>
+    </div>
+    <div class="card">
+      <button id="cal-done" class="primary wide" disabled>Calibrate</button>
+      <p id="cal-error" class="error" hidden></p>
+      <button id="cal-cancel" class="link">Cancel</button>
+    </div>
+  </section>
+
+  <section id="view-check" class="view" hidden>
+    <div class="card">
+      <h2>Do the red lines sit on the court?</h2>
+      <img id="overlay" class="frame" alt="The fitted court drawn over the frame">
+      <p id="check-text"></p>
+      <ul id="check-worst" class="small"></ul>
+      <div class="actions">
+        <button id="check-redo">Adjust points</button>
+        <button id="check-ok" class="primary">Yes, use it</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-result" class="view" hidden>
+    <button class="link back" id="result-back">&larr; All clips</button>
+    <div class="card result">
+      <div id="result-player" class="muted"></div>
+      <div id="result-speed" class="speed"></div>
+      <div id="result-sub" class="sub"></div>
+      <dl id="result-details" class="details"></dl>
+      <img id="result-plot" class="plot" alt="The fitted flight and its speed over time" hidden>
+      <p id="result-note" class="muted small"></p>
+      <button id="result-delete" class="danger">Delete clip</button>
+    </div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

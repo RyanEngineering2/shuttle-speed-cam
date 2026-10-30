@@ -99,6 +99,8 @@ Hints, when you have them:
 | `--contact U,V@FRAME` | where and when the racket met the shuttle |
 | `--no-incoming` | don't time the hit from an automatically paired incoming track (check the `incoming` line in the report) |
 | `--hit-window N` | how many frames before the first sighting the hit may be (default 3) |
+| `--background median` | start the motion detector from the clip's median frame (the default for clips under 4 s, which give it no time to learn the court) |
+| `--json results.json` | also write the results as JSON (the [web app](web-app.md) reads this) |
 | `--track shot.csv --incoming in.csv --fps 60` | skip detection: your own `frame,u,v[,sigma]` tracks, for footage the detector struggles with |
 
 Frame numbers in hints are the video file's own frame numbers, even when repeated

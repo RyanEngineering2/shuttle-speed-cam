@@ -88,9 +88,11 @@ class FlightFit:
 
 def _integrate(p0, v0, t0: float, times: np.ndarray, k: float, g: float, h: float = 2e-3) -> np.ndarray:
     """RK4 integration of drag + gravity, sampled at ascending `times` >= t0."""
+    # Plain Python floats throughout: faster than NumPy scalars here, and a wild trial
+    # step from the optimiser overflows quietly to inf instead of printing warnings.
     x, y, z = (float(c) for c in p0)
     vx, vy, vz = (float(c) for c in v0)
-    t = t0
+    k, g, t = float(k), float(g), float(t0)
     out = np.empty((len(times), 6))
 
     def acc(ax, ay, az):
@@ -99,7 +101,7 @@ def _integrate(p0, v0, t0: float, times: np.ndarray, k: float, g: float, h: floa
 
     order = np.argsort(times)
     for idx in order:
-        target = float(times[idx])  # plain floats: a wild trial step overflows quietly to inf
+        target = float(times[idx])
         while target - t > 1e-12:
             dt = min(h, target - t)
             a1 = acc(vx, vy, vz)

@@ -15,13 +15,18 @@ dependencies = ["numpy>=1.24", "opencv-python-headless>=4.8"]
 # On the Pi, picamera2 comes from apt (python3-picamera2); see deploy/install.sh.
 serial = ["pyserial>=3.5"]
 plot = ["matplotlib>=3.7"]
-dev = ["pytest>=7", "matplotlib>=3.7", "pyserial>=3.5"]
+# `shuttlecam serve`: the phone web app (docs/web-app.md)
+web = ["flask>=3", "waitress>=3", "matplotlib>=3.7"]
+dev = ["pytest>=7", "matplotlib>=3.7", "pyserial>=3.5", "flask>=3", "waitress>=3"]
 
 [project.scripts]
 shuttlecam = "shuttlecam.cli:main"
 
 [tool.setuptools]
-packages = ["shuttlecam"]
+packages = ["shuttlecam", "shuttlecam.web"]
+
+[tool.setuptools.package-data]
+"shuttlecam.web" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

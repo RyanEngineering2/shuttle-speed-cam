@@ -58,6 +58,11 @@ class MotionDetector:
         self.background = None
         self.previous = None
 
+    def prime(self, background: np.ndarray) -> None:
+        """Start from a known background (8-bit grayscale) instead of the first frame."""
+        self.background = background.astype(np.float32)
+        self.previous = None
+
     def _change(self, cur: np.ndarray, ref: np.ndarray) -> np.ndarray:
         """Per-pixel change from `ref` to `cur`, as uint8, in the configured direction.
 
@@ -77,6 +82,9 @@ class MotionDetector:
     def __call__(self, gray: np.ndarray) -> list[Detection]:
         if self.background is None or self.background.shape != gray.shape:
             self.background = gray.astype(np.float32)
+            self.previous = gray
+            return []
+        if self.previous is None:  # primed: this is the first frame
             self.previous = gray
             return []
 

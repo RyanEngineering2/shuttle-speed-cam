@@ -93,6 +93,40 @@ class FrameTiming:
         return float(k / self.rate)
 
 
+def median_background(
+    video_path: str, start: int = 0, end: int | None = None, samples: int = 31
+) -> np.ndarray | None:
+    """The scene without its moving parts: the per-pixel median of frames spread over the clip.
+
+    The motion detector otherwise learns the background from the first frame and
+    takes a second or two to forget what was in it. A phone clip trimmed to start
+    just before a smash doesn't have that long: where the players stood at the start
+    lingers as ghost motion while the shuttle flies, and the smash is lost among
+    them. In the median of the whole clip, anyone who moves about is gone.
+    """
+    cap = cv2.VideoCapture(video_path)
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    last = total - 1 if end is None else min(end, total - 1)
+    if last - start < 10:
+        cap.release()
+        return None
+    wanted = set(np.linspace(start, last, min(samples, last - start + 1)).round().astype(int).tolist())
+    if start:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+    stack = []
+    for i in range(start, last + 1):
+        if not cap.grab():
+            break
+        if i in wanted:
+            ok, image = cap.retrieve()
+            if ok:
+                stack.append(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image)
+    cap.release()
+    if len(stack) < 5:
+        return None
+    return np.median(np.stack(stack), axis=0).astype(np.uint8)
+
+
 def find_repeated_frames(video_path: str, start: int = 0, end: int | None = None) -> FrameTiming | None:
     """Does this video repeat frames? If so, which frames are real, and at what rate?
 
@@ -143,8 +177,11 @@ def find_repeated_frames(video_path: str, start: int = 0, end: int | None = None
     return FrameTiming(keep, rate)
 
 
-def track_image_space(frames: Iterable[Frame], cfg: Analyze3DConfig) -> list[ImageTrack]:
-    """Shuttle flights in pixel coordinates."""
+def track_image_space(
+    frames: Iterable[Frame], cfg: Analyze3DConfig, background: np.ndarray | None = None
+) -> list[ImageTrack]:
+    """Shuttle flights in pixel coordinates. `background`: an 8-bit grayscale frame
+    of the empty scene to start the motion detector from (see median_background)."""
     detector = tracker = None
     width = height = 0
     shots = []
@@ -161,6 +198,8 @@ def track_image_space(frames: Iterable[Frame], cfg: Analyze3DConfig) -> list[Ima
                     player_margin=round(cfg.player_margin * s),
                 )
             )
+            if background is not None and background.shape == (height, width):
+                detector.prime(background)
             # The tracker works in "world units"; here 1 unit is 1 pixel, so its
             # speed settings (km/h = units/s x 3.6) are image speeds.
             tracker = Tracker(
@@ -285,6 +324,7 @@ def analyze_3d(
     cfg: Analyze3DConfig,
     terminal_velocity: float = 6.7,
     gravity: float = 9.81,
+    background: np.ndarray | None = None,
 ) -> list[Shot3D]:
     frames = iter(frames)
     first = next(frames, None)
@@ -297,7 +337,7 @@ def analyze_3d(
         yield first
         yield from frames
 
-    tracks = track_image_space(all_frames(), cfg)
+    tracks = track_image_space(all_frames(), cfg, background)
     shots = []
     for track in tracks:
         if len(track.observations) < 6:

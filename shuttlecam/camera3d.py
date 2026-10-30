@@ -23,7 +23,21 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .court import landmarks
+from .court import landmarks, segments
+
+
+def draw_court(
+    image: np.ndarray, camera: CameraModel, points: dict | None = None, thickness: int = 1
+) -> None:
+    """Draw the fitted court (lines, net posts, net tape) over a frame, in place,
+    and circle the landmarks that were marked. Lines that sit on the real ones
+    mean the calibration is right."""
+    for a, b in segments():
+        if min(camera.depth([a, b])) > 0:
+            (u1, v1), (u2, v2) = camera.project([a, b])
+            cv2.line(image, (int(u1), int(v1)), (int(u2), int(v2)), (0, 0, 255), thickness, cv2.LINE_AA)
+    for u, v in (points or {}).values():
+        cv2.circle(image, (int(u), int(v)), 4 + 2 * thickness, (0, 255, 255), thickness, cv2.LINE_AA)
 
 
 @dataclass

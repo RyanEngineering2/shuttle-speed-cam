@@ -121,7 +121,7 @@ pip install -e ".[dev]"
 shuttlecam simulate -o smash.mp4 --speed 250            # render a 250 km/h smash
 shuttlecam analyze smash.mp4 --calibration smash.calibration.json --plot shot.png
 #   shot 1:  245.2 km/h   (frame-to-frame peak 237 km/h, 45 points, t=0.080s)
-pytest                                                   # 64 tests, about a minute
+pytest                                                   # 69 tests, about a minute
 ```
 
 ### On your own slow-motion video
@@ -144,6 +144,18 @@ shuttlecam analyze3d match.mp4 --camera camera.json --start 515 --end 525 --plot
 ```
 
 See [docs/3d-mode.md](docs/3d-mode.md).
+
+### At the court, with just a phone
+
+```bash
+pip install -e ".[web]"
+shuttlecam serve                      # prints the passcode; then: tailscale funnel --bg 8000
+```
+
+The PC that runs this does the work; phones open its page, mark the court once
+on a frame from their first clip, then upload trimmed clips and get the smash speed
+back in about a minute, with a best-per-player list. Setup, remote access and
+filming tips: [docs/web-app.md](docs/web-app.md).
 
 ### On the Raspberry Pi
 
@@ -173,7 +185,8 @@ shuttlecam/            Python package that runs on the Pi
   fit3d.py             3D flight fit (drag + gravity) with speed ranges
   analyze3d.py         match footage: image tracking, hit splitting, 3D fits
   sim.py               synthetic smash clips with ground truth, side-on and 3D
-  cli.py               shuttlecam run | analyze | calibrate | snapshot | simulate | calibrate3d | analyze3d
+  web/                 `shuttlecam serve`: phone web app (upload a clip, get the speed)
+  cli.py               shuttlecam run | analyze | calibrate | snapshot | simulate | calibrate3d | analyze3d | serve
 firmware/
   p10-display/         ESP32: drives HUB12 P10 panels, listens on UART (PlatformIO)
   esp32-cam-v1/        v1: the whole tracker on an ESP32-CAM + OV2640 (retired)
@@ -206,7 +219,8 @@ tests/                 unit tests plus end-to-end tests on simulated clips
 - [ ] Track the shuttle from the very first frame after the hit, even right next to the player
 - [ ] Learn the shuttle's terminal velocity from its own tracks (feather vs nylon)
 - [ ] Two cameras for 3D tracking, removing the flight-plane assumption
-- [ ] A small web page on the Pi with the session's shot list and best smashes
+- [x] A phone web app: upload a clip at the court, get the speed ([docs/web-app.md](docs/web-app.md))
+- [ ] The same web page served by the Pi itself, with the live shot list
 
 ## License
 

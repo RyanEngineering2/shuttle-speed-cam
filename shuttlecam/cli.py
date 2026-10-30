@@ -13,6 +13,9 @@ from .calibration import Calibration
 from .config import Config, load_config
 from .tracker import Shot
 
+# analyze3d: clips shorter than this start the motion detector from their median frame.
+SHORT_CLIP_S = 4.0
+
 
 def _load_calibration(path: str) -> Calibration:
     if not Path(path).exists():
@@ -201,8 +204,8 @@ def cmd_calibrate3d(cfg: Config, args) -> None:
     import cv2
     import numpy as np
 
-    from .camera3d import calibrate_camera
-    from .court import landmarks, segments
+    from .camera3d import calibrate_camera, draw_court
+    from .court import landmarks
 
     if args.list:
         print("Landmarks (metres; X right, Y away from the camera with the net at 0, Z up):")
@@ -241,12 +244,7 @@ def cmd_calibrate3d(cfg: Config, args) -> None:
         flag = "   <- check this one" if err > max(5.0, 3 * cal.rms_px) else ""
         print(f"    {name:28s} {err:5.1f} px{flag}")
     if args.overlay:
-        for a, b in segments():
-            if min(cam.depth([a, b])) > 0:
-                (u1, v1), (u2, v2) = cam.project([a, b])
-                cv2.line(image, (int(u1), int(v1)), (int(u2), int(v2)), (0, 0, 255), 1, cv2.LINE_AA)
-        for u, v in points.values():
-            cv2.circle(image, (int(u), int(v)), 6, (0, 255, 255), 1, cv2.LINE_AA)
+        draw_court(image, cam, points)
         cv2.imwrite(args.overlay, image)
         print(f"  court model drawn over the frame: {args.overlay}")
 
@@ -308,6 +306,59 @@ def _print_shot(i: int, shot, frame_of) -> None:
         )
 
 
+def _headline(shots):
+    """The shot to lead with: the fastest reliable launch, else the fastest launch
+    with a timed hit, else the fastest first sighting."""
+    if not shots:
+        return None
+    return max(
+        shots,
+        key=lambda s: (
+            s.launch_reliable,
+            s.launch_known,
+            s.fit.speed_kmh if s.launch_known else s.fit.first_seen_kmh,
+        ),
+    )
+
+
+def _shot_json(shot, frame_of) -> dict:
+    """One shot's results, for --json (and the web app)."""
+    f = shot.fit
+    obs = f.observations
+    lo, hi = f.speed_range_kmh
+    flo, fhi = f.first_seen_range_kmh
+    x, y, z = (float(c) for c in f.contact)
+    known = bool(shot.launch_known)
+    return {
+        "frames": [round(frame_of(obs[0].t)), round(frame_of(obs[-1].t))],
+        "points": len(obs),
+        "launch_kmh": round(float(f.speed_kmh), 1),
+        "launch_range_kmh": [round(float(lo), 1), round(float(hi), 1)],
+        "launch_known": known,
+        "launch_reliable": bool(shot.launch_reliable),
+        "first_tracked_kmh": round(float(f.first_seen_kmh), 1),
+        "first_tracked_range_kmh": [round(float(flo), 1), round(float(fhi), 1)],
+        "first_tracked_frame": round(frame_of(f.first_seen_time)),
+        "ms_after_hit": round((f.first_seen_time - f.contact_time) * 1000) if known else None,
+        "hit_frame": round(frame_of(f.contact_time), 1),
+        "hit_height_m": round(z, 2),
+        "hit_xy_m": [round(x, 2), round(y, 2)],
+        "lands_xy_m": None
+        if f.landing is None
+        else [round(float(f.landing[0]), 2), round(float(f.landing[1]), 2)],
+        "landing_frame": None if f.landing is None else round(frame_of(f.landing_time)),
+        "incoming_frames": None
+        if shot.incoming is None
+        else [
+            round(frame_of(shot.incoming.observations[0].t)),
+            round(frame_of(shot.incoming.observations[-1].t)),
+        ],
+        "rms_px": round(float(f.rms_px), 2),
+        "depth_well_determined": not f.depth_uncertain,
+        "little_perspective": bool(f.distance_ratio < 1.5 and not shot.anchored and not shot.launch_reliable),
+    }
+
+
 def _calibrate_drag(args, cam, shot, vt: float, fit_inputs: dict, source_name: str) -> None:
     """--known-speed: tune the shuttle's drag so `shot` leaves the racket at that speed."""
     from .config import save_terminal_velocity
@@ -347,7 +398,7 @@ def cmd_analyze3d(cfg: Config, args) -> None:
     import cv2
     import numpy as np
 
-    from .analyze3d import ImageTrack, Shot3D, analyze_3d, find_repeated_frames
+    from .analyze3d import ImageTrack, Shot3D, analyze_3d, find_repeated_frames, median_background
     from .camera import VideoSource
     from .camera3d import CameraModel
     from .fit3d import fit_flight
@@ -447,7 +498,15 @@ def cmd_analyze3d(cfg: Config, args) -> None:
                 f"re-timed (--keep-repeats turns this off)"
             )
         print(f"{args.video}: tracking at {w}x{h}...")
-        shots = analyze_3d(frames(), camera, cfg.analyze3d, terminal_velocity=vt)
+        # A short clip (a phone clip trimmed around one smash) gives the detector no time
+        # to learn the scene from its first frame: start it from the clip's median.
+        total = int(source.cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        window_s = ((end_index if end_index is not None else total) - start_index) / fps
+        mode = args.background
+        if mode == "auto":
+            mode = "median" if 0 < window_s < SHORT_CLIP_S else "first-frame"
+        background = median_background(args.video, start_index, end_index) if mode == "median" else None
+        shots = analyze_3d(frames(), camera, cfg.analyze3d, terminal_velocity=vt, background=background)
         source.close()
         if args.no_incoming:
             for shot in shots:
@@ -487,6 +546,20 @@ def cmd_analyze3d(cfg: Config, args) -> None:
         shots = [s for s in shots if s.fit.first_seen_kmh >= args.min_speed or s.hinted]
         shown = shots if args.all or args.track else [s for s in shots if s.reliable or s.hinted]
         hidden = len(shots) - len(shown)
+    best = _headline(shown)
+    if args.json:
+        import json
+
+        summary = {
+            "video": Path(args.video or args.track).name,
+            "file_fps": fps,
+            "real_fps": timing.rate if timing else None,
+            "terminal_velocity": vt,
+            "shots": [_shot_json(s, frame_of) for s in shown],
+            "best": shown.index(best) if best is not None else None,
+            "hidden": hidden,
+        }
+        Path(args.json).write_text(json.dumps(summary, indent=2), encoding="utf-8")
     if not shown:
         print("No shots found." + (f" ({hidden} poor fits hidden; --all shows them.)" if hidden else ""))
         return
@@ -499,7 +572,6 @@ def cmd_analyze3d(cfg: Config, args) -> None:
     if args.plot:
         from .plot import plot_flight3d
 
-        best = max(shown, key=lambda s: s.fit.speed_kmh if s.launch_reliable else s.fit.first_seen_kmh)
         image = None
         if args.video:
             cap = cv2.VideoCapture(args.video)
@@ -510,6 +582,21 @@ def cmd_analyze3d(cfg: Config, args) -> None:
                 image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         plot_flight3d(best.fit, cam, args.plot, image=image, title=Path(args.video or args.track).name)
         print(f"Saved {args.plot}")
+
+
+def cmd_serve(cfg: Config, args) -> None:
+    try:
+        from .web.server import serve
+    except ImportError as e:
+        sys.exit(f'The web app needs Flask and Waitress: pip install -e ".[web]" ({e})')
+    serve(
+        data_dir=args.data,
+        host=args.host,
+        port=args.port,
+        passcode=args.passcode,
+        config_path=args.config,
+        terminal_velocity=cfg.tracker.terminal_velocity,
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -570,6 +657,13 @@ def main(argv: list[str] | None = None) -> None:
         "--landing", help="where and when the shuttle reached the floor: U,V@FRAME (anchors the flight)"
     )
     p.add_argument("--keep-repeats", action="store_true", help="don't drop repeated frames (see docs)")
+    p.add_argument(
+        "--background",
+        choices=["auto", "median", "first-frame"],
+        default="auto",
+        help=f"how the motion detector starts: from the clip's median frame (auto: clips under {SHORT_CLIP_S:g} s) "
+        "or from the first frame",
+    )
     p.add_argument("--no-incoming", action="store_true", help="don't time the hit from an incoming track")
     p.add_argument(
         "--hit-window",
@@ -583,7 +677,23 @@ def main(argv: list[str] | None = None) -> None:
     )
     p.add_argument("--save-drag", help="with --known-speed: save the tuned drag to this TOML file, for -c")
     p.add_argument("--plot", help="save a figure of the fastest shot")
+    p.add_argument("--json", help="also write the results to this JSON file")
     p.set_defaults(func=cmd_analyze3d)
+
+    p = sub.add_parser(
+        "serve", help="web app for phones: upload a clip, get the smash speed (docs/web-app.md)"
+    )
+    p.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="127.0.0.1: this PC only, or behind Tailscale Funnel (default); 0.0.0.0: also the local network",
+    )
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument(
+        "--data", default=str(Path.home() / "shuttlecam-web"), help="where clips and results are kept"
+    )
+    p.add_argument("--passcode", help="the site's passcode (default: the saved one, or a new random one)")
+    p.set_defaults(func=cmd_serve)
 
     p = sub.add_parser("snapshot", help="save one camera frame, for calibrating")
     p.add_argument("--source", help="picamera2, a video file, or a webcam index")

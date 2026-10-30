@@ -7,7 +7,7 @@ Everything here runs on a synthetic smash filmed from behind the baseline
 import numpy as np
 import pytest
 
-from shuttlecam.analyze3d import ImageTrack, analyze_3d, split_at_hits
+from shuttlecam.analyze3d import ImageTrack, analyze_3d, median_background, split_at_hits
 from shuttlecam.camera3d import CameraModel, calibrate_camera
 from shuttlecam.cli import main
 from shuttlecam.config import Analyze3DConfig, load_config
@@ -293,3 +293,23 @@ def test_take_off_and_landing_anchor_a_far_away_camera():
     assert lo <= scene.speed_kmh <= hi
     assert fit.speed_kmh == pytest.approx(scene.speed_kmh, rel=0.1)
     assert fit.distance_ratio < 1.3  # and it knows the view has little perspective
+
+
+def test_median_background_removes_a_player_who_moves(tmp_path):
+    # A short clip: a "player" walks across a textured court. The first frame has
+    # the player in it; the median of the clip doesn't.
+    rng = np.random.default_rng(0)
+    court = (60 + 40 * rng.random((90, 160))).astype(np.uint8)
+    frames = []
+    for i in range(40):
+        f = court.copy()
+        x = 10 + 3 * i
+        f[30:70, x : x + 12] = 230
+        frames.append(f)
+    write_video(tmp_path / "walk.avi", frames, 60)
+    bg = median_background(str(tmp_path / "walk.avi"))
+    assert bg is not None and bg.shape == court.shape
+    start = (slice(30, 70), slice(10, 22))  # where the player stood in the first frame
+    assert np.abs(bg[start].astype(int) - court[start]).mean() < 10  # gone (MJPG adds a little noise)
+    assert np.abs(frames[0][start].astype(int) - court[start]).mean() > 100
+    assert np.abs(bg.astype(int) - court).mean() < 6  # and the rest of the court is intact
