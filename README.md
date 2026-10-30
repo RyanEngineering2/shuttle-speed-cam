@@ -60,8 +60,10 @@ toward or away from the camera. `shuttlecam analyze3d` calibrates the camera fro
 the **court lines and net posts**, fits each shot's **full 3D flight** with the
 same drag physics, times the hit from the **incoming shuttle**, and reports the
 launch speed with an honest range. On a real 60 fps fan recording it measured a
-Kento Momota jump smash at **about 320–345 km/h** (details and caveats in
-**[docs/3d-mode.md](docs/3d-mode.md)**).
+Kento Momota jump smash at **about 320–345 km/h**. On broadcast footage of a smash
+shown as 476 km/h, it handles the re-uploaded frame rate and, anchored on the take-off
+spot and the landing, gives 469–668 km/h: consistent, but far less precise from a
+camera that far away (details and caveats in **[docs/3d-mode.md](docs/3d-mode.md)**).
 
 ![3D mode on a synthetic smash](docs/images/smash-3d.png)
 
@@ -116,7 +118,7 @@ pip install -e ".[dev]"
 shuttlecam simulate -o smash.mp4 --speed 250            # render a 250 km/h smash
 shuttlecam analyze smash.mp4 --calibration smash.calibration.json --plot shot.png
 #   shot 1:  245.2 km/h   (frame-to-frame peak 237 km/h, 45 points, t=0.080s)
-pytest                                                   # 59 tests, about a minute
+pytest                                                   # 62 tests, about a minute
 ```
 
 ### On your own slow-motion video

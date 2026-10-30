@@ -95,8 +95,14 @@ Hints, when you have them:
 | Option | What it gives the fit |
 |---|---|
 | `--takeoff U,V` | pixel of the smasher's feet at take-off; pins down the distance from the camera |
+| `--landing U,V@FRAME` | where and when the shuttle reached the floor; with `--takeoff`, anchors both ends of the flight |
 | `--contact U,V@FRAME` | where and when the racket met the shuttle |
+| `--no-incoming` | don't time the hit from an automatically paired incoming track (check the `incoming` line in the report) |
+| `--hit-window N` | how many frames before the first sighting the hit may be (default 3) |
 | `--track shot.csv --incoming in.csv --fps 60` | skip detection: your own `frame,u,v[,sigma]` tracks, for footage the detector struggles with |
+
+Frame numbers in hints are the video file's own frame numbers, even when repeated
+frames are dropped (below).
 
 Use at least 6 landmarks spread across the frame, including a net post top or two.
 Calibrate per camera position: if the camera is moved or re-zoomed between
@@ -142,6 +148,48 @@ included in this repository.
 
 So the smash left the racket at roughly 320–345 km/h. That has not been checked
 against a radar gun.
+
+## Re-uploads and broadcast footage
+
+**Repeated frames.** Many videos online are 25 or 30 fps footage re-uploaded at
+60 fps, with each real frame shown two or three times. Tracked as-is, the shuttle
+would seem to stop and jump, with timestamps off by up to a frame. `analyze3d`
+checks every video first: a repeat changes by almost nothing compared with a
+typical new frame, so when a quarter or more of the frames are repeats (with a
+clean gap between the two groups), only the real frames are kept and they are
+re-timed at the real rate. It prints a line when it does this; `--keep-repeats`
+turns it off.
+
+**Far-away cameras.** One camera judges depth from perspective, from how the
+shuttle's distance changes over the flight. A broadcast camera 30 m back with a
+long lens sees almost none: the distance changes by only ~1.1–1.5x. The report
+warns about this. The fix is to anchor both ends of the flight on the floor,
+which the camera *can* locate exactly: `--takeoff` (the smasher's feet) and
+`--landing` (where it came down, and when). The time between them then fixes the
+speed. On a synthetic broadcast-style setup (camera 30 m back, 11 m up, 25 fps,
+shuttle first seen three frames after the hit) the track alone reads 108 km/h
+for a true 300, while the anchored fit gives 300 (231–346), and 414 (362–460)
+for a true 420. Expect ranges of about ±20% from such footage.
+
+**A reality check against a broadcast speed reading.** A compilation video of
+fast smashes ([video](https://www.youtube.com/watch?v=tnG93YCk-fg), 0:10, not
+included here) shows a jump smash from the far baseline with an on-screen
+"476 KPH". The source: 25 fps broadcast footage repeated into 60 fps, from a
+camera 26 m behind the court and 11.3 m up (court calibration: 34 landmarks,
+1.4 px RMS).
+
+| Run | Result |
+|---|---|
+| Automatic | no reliable shot (correct: little perspective, hit not seen) |
+| Anchored: take-off spot + landing, `--no-incoming` | launch **469–668 km/h** (best fit 622), flagged *not reliable*; hit at frame 336, 2.8 m high above the take-off spot; lands just past the near long service line |
+
+The video's 476 km/h sits inside that range, at its low end, so the two agree
+within what this footage can resolve. The best-fit value itself is above any
+recorded smash, a sign the inputs (the exact take-off spot, the timing of a
+re-encoded broadcast) carry more error than the range shows. Matching 476 exactly
+by giving the shuttle less drag (terminal velocity 7.2 m/s) would also move the
+fitted hit down to 1.6 m, too low for a jump smash. So the drag model was left as
+it is rather than tuned to one clip.
 
 ## Limits
 

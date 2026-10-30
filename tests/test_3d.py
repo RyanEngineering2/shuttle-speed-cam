@@ -195,3 +195,70 @@ def test_cli_calibrate3d_and_analyze3d_with_a_track(tmp_path, capsys):
     out = capsys.readouterr().out
     speed = float(out.split("launch speed")[1].split("km/h")[0])
     assert speed == pytest.approx(scene.speed_kmh, rel=0.05)
+
+
+# -- re-uploaded and broadcast footage -------------------------------------------------
+
+
+def write_video(path, frames, fps):
+    import cv2
+
+    h, w = frames[0].shape
+    out = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), fps, (w, h), isColor=False)
+    for f in frames:
+        out.write(f)
+    out.release()
+
+
+def test_repeated_frames_are_found_and_retimed(tmp_path):
+    from shuttlecam.analyze3d import find_repeated_frames
+
+    scene = Smash3DScene(size=(480, 270), fps=25.0, duration=2.0)
+    real = [f.image for f in scene.frames()]
+    # 25 fps footage uploaded at 60 fps: each frame shown 2 or 3 times (2.4 on average).
+    shown = [real[int(i * 25 / 60)] for i in range(int(len(real) * 60 / 25))]
+    write_video(tmp_path / "reupload.avi", shown, 60)
+    timing = find_repeated_frames(str(tmp_path / "reupload.avi"))
+    assert timing is not None and timing.rate == 25.0
+    assert abs(len(timing.keep) - len(real)) <= 1
+    assert timing.time_of(timing.keep[10]) == pytest.approx(10 / 25)
+
+
+def test_genuine_60fps_is_left_alone(tmp_path):
+    from shuttlecam.analyze3d import find_repeated_frames
+
+    scene = Smash3DScene(size=(480, 270), fps=60.0, duration=1.0)
+    write_video(tmp_path / "real60.avi", [f.image for f in scene.frames()], 60)
+    assert find_repeated_frames(str(tmp_path / "real60.avi")) is None
+
+
+def test_take_off_and_landing_anchor_a_far_away_camera():
+    # A broadcast camera 30 m back and 11 m up with a long lens, 25 fps, shuttle first
+    # seen 3 frames after the hit: the track alone can't judge depth, but the
+    # take-off spot and the landing (both on the floor) pin the flight.
+    scene = Smash3DScene(
+        size=(960, 540),
+        speed_kmh=300,
+        heading_deg=175,
+        elevation_deg=-12,
+        contact=(1.3, 7.5, 2.9),
+        camera_position=(0.1, -32.6, 11.3),
+        look_at=(0.6, 0.0, 0.0),
+        focal=4341.0,
+        fps=25.0,
+    )
+    t_land, land = scene.landing
+    times = [k / 25 for k in range(int(scene.t_hit * 25) + 3, 200) if k / 25 < t_land]
+    obs = observe(scene, times, noise=1.0, seed=1)
+    fit = fit_flight(
+        scene.camera,
+        obs,
+        max_gap_s=4 / 25,
+        takeoff_xy=(scene.contact[0] + 0.2, scene.contact[1] + 0.4),
+        landing_px=tuple(scene.camera.project([land])[0]),
+        landing_time=t_land,
+    )
+    lo, hi = fit.speed_range_kmh
+    assert lo <= scene.speed_kmh <= hi
+    assert fit.speed_kmh == pytest.approx(scene.speed_kmh, rel=0.1)
+    assert fit.distance_ratio < 1.3  # and it knows the view has little perspective

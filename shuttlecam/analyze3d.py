@@ -8,6 +8,11 @@
    before this one started, close by. The hit happened where the two meet, which
    tells the 3D fit when and where contact was.
 3. Fit each flight in 3D through the calibrated camera (fit3d.py).
+
+Videos re-uploaded at 60 fps are often 25 or 30 fps footage with frames repeated
+two or three times. Repeated frames would make the shuttle look like it stops and
+jumps, and their timestamps are wrong, so `find_repeated_frames` spots them and
+the real frames are re-timed at the real frame rate.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 
 from .calibration import Calibration
@@ -44,7 +50,8 @@ class Shot3D:
     track: ImageTrack
     incoming: ImageTrack | None
     fit: FlightFit
-    hinted: bool = False  # the user said where/when the hit was
+    hinted: bool = False  # the user said where/when the hit was, or anchored both ends
+    anchored: bool = False  # take-off spot and landing given: both ends of the flight pinned
 
     @property
     def launch_known(self) -> bool:
@@ -70,6 +77,63 @@ class Shot3D:
     def launch_reliable(self) -> bool:
         lo, hi = self.fit.speed_range_kmh
         return self.reliable and self.launch_known and hi <= 1.5 * lo and hi <= 600
+
+
+STANDARD_RATES = (23.976, 24.0, 25.0, 29.97, 30.0, 48.0, 50.0, 59.94, 60.0)
+
+
+@dataclass
+class FrameTiming:
+    keep: list[int]  # indices of the real (non-repeated) frames
+    rate: float  # their real frame rate
+
+    def time_of(self, index: float) -> float:
+        """Re-timed time of a (possibly fractional) original frame index."""
+        k = np.interp(index, self.keep, np.arange(len(self.keep)))
+        return float(k / self.rate)
+
+
+def find_repeated_frames(video_path: str, start: int = 0, end: int | None = None) -> FrameTiming | None:
+    """Does this video repeat frames? If so, which frames are real, and at what rate?
+
+    Per frame we measure how much it changed from the one before (the 99.9th
+    percentile of the change, after cancelling any whole-frame brightness shift,
+    at reduced size for speed), relative to how much a typical real frame changes
+    in this video. A repeat changes by almost nothing: under a tenth of that. A
+    video counts as repeating when at least a quarter of its frames are repeats
+    and almost none fall in the gap between (a tenth to 40%), which keeps real
+    60 fps footage of a quiet scene from being mistaken for repeats.
+    """
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 60.0
+    if start:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+    prev, change, i = None, [], start
+    while end is None or i <= end:
+        ok, img = cap.read()
+        if not ok:
+            break
+        g = cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (480, 270), interpolation=cv2.INTER_AREA)
+        g = g.astype(np.int16)
+        if prev is not None:
+            diff = g - prev
+            change.append(float(np.percentile(np.abs(diff - round(float(diff.mean()))), 99.9)))
+        prev = g
+        i += 1
+    cap.release()
+    d = np.array(change)
+    if len(d) < 30:
+        return None
+    typical = float(np.median(np.sort(d)[len(d) // 2 :])) or 1.0
+    rel = d / typical
+    if np.mean(rel < 0.1) < 0.25 or np.mean((rel >= 0.1) & (rel < 0.4)) > 0.03:
+        return None
+    keep = [start] + [start + 1 + j for j, x in enumerate(rel) if x >= 0.1]
+    measured = (len(keep) - 1) / ((keep[-1] - keep[0]) / fps)
+    rate = min(STANDARD_RATES, key=lambda r: abs(r - measured))
+    if abs(rate - measured) / measured > 0.04:
+        rate = measured
+    return FrameTiming(keep, rate)
 
 
 def track_image_space(frames: Iterable[Frame], cfg: Analyze3DConfig) -> list[ImageTrack]:

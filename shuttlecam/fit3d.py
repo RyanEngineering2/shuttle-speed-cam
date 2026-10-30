@@ -21,7 +21,10 @@ Hints make the fit sturdier, the first one most of all:
 * the incoming shuttle: the hit happens where the incoming flight ends, so its
   track (extrapolated a few frames) tells the fit when and where contact was;
 * the pixel (and frame) where the racket met the shuttle;
-* the smasher's take-off spot on the floor, which pins down depth.
+* the smasher's take-off spot on the floor, which pins down depth;
+* where and when the shuttle landed. The floor is a known plane, so even a camera
+  far away locates the landing exactly. With the take-off spot, this anchors both
+  ends of the flight, and the time between them fixes the speed (time of flight).
 """
 
 from __future__ import annotations
@@ -65,6 +68,9 @@ class FlightFit:
     # the best one, as a fraction of it. Wide means one camera can't tell how far
     # away the shot was: add the take-off hint.
     depth_range: tuple[float, float] = (1.0, 1.0)
+    # Farthest / nearest distance from the camera over the tracked flight. Below
+    # about 1.5 the view has little perspective (see _summarize).
+    distance_ratio: float = 1.0
 
     @property
     def depth_uncertain(self) -> bool:
@@ -152,8 +158,11 @@ def _levenberg_marquardt(fun, x0: np.ndarray, max_iter: int = 80) -> tuple[np.nd
 class _Problem:
     """Residuals for one fit: reprojection errors plus optional hints and sanity terms."""
 
-    def __init__(self, camera, obs, k, g, gap, contact_hint, takeoff_hint, incoming=None, time_hint=None):
+    def __init__(
+        self, camera, obs, k, g, gap, contact_hint, takeoff_hint, incoming=None, time_hint=None, landing=None
+    ):
         self.camera = camera
+        self.landing = landing  # (floor point xyz, time, time sigma) or None
         self.observations = obs
         self.t = np.array([o.t for o in obs])
         self.uv = np.array([(o.u, o.v) for o in obs])
@@ -171,6 +180,7 @@ class _Problem:
             + (2 if takeoff_hint else 0)
             + (2 if incoming else 0)
             + (1 if time_hint else 0)
+            + (3 if landing else 0)
             + n
             + 1
         )
@@ -179,7 +189,11 @@ class _Problem:
         return self.t1 - self.gap / (1.0 + math.exp(-max(min(a, 50.0), -50.0)))  # within (t1 - gap, t1)
 
     def residuals(self, tc: float, p0: np.ndarray, v0: np.ndarray) -> np.ndarray:
-        states = _integrate(p0, v0, tc, self.t, self.k, self.g)
+        times = self.t if self.landing is None else np.append(self.t, max(self.landing[1], tc))
+        states = _integrate(p0, v0, tc, times, self.k, self.g)
+        landed = None
+        if self.landing is not None:
+            states, landed = states[:-1], states[-1]
         self.last_states = states
         if not np.all(np.isfinite(states)):
             self.last_first_depth = math.inf
@@ -202,6 +216,13 @@ class _Problem:
         if self.time_hint is not None:
             t_hint, s = self.time_hint
             r.append([(tc - t_hint) / s])
+        if landed is not None:
+            # On the floor at the landing spot, at the landing time. The time is only
+            # known to within a frame, so the tolerance grows with the speed then.
+            where, _, s_t = self.landing
+            vel = landed[3:]
+            tol = np.array([0.15, 0.15, 0.05]) + np.abs(vel) * s_t
+            r.append((landed[:3] - where) / tol)
         # Stay above the floor while it is being watched, and hit it from a sane height.
         r.append(np.minimum(states[:, 2] + 0.05, 0.0) / 0.02)
         r.append([min(p0[2] - 0.2, 0.0) / 0.05 + max(p0[2] - 4.5, 0.0) / 0.05])
@@ -260,6 +281,8 @@ def fit_flight(
     takeoff_xy: tuple[float, float] | None = None,
     takeoff_sigma: float = 1.0,
     incoming: list[Observation] | None = None,
+    landing_px: tuple[float, float] | None = None,
+    landing_time: float | None = None,
     max_gap_s: float | None = None,
     profile_steps: int = 11,
     terminal_velocity_spread: float = 0.2,
@@ -268,7 +291,8 @@ def fit_flight(
 
     Hints (all optional): `contact_px` and `contact_time` for where and when the
     racket met the shuttle; `takeoff_xy`, the smasher's take-off spot on the floor
-    (metres); `incoming`, observations of the shuttle on its way in before the hit.
+    (metres); `incoming`, observations of the shuttle on its way in before the hit;
+    `landing_px` and `landing_time`, where and when it reached the floor.
 
     `max_gap_s` bounds how long before the first observation the contact can be:
     by default three frames, or back to the last incoming observation.
@@ -291,6 +315,12 @@ def fit_flight(
     takeoff = (takeoff_xy[0], takeoff_xy[1], takeoff_sigma) if takeoff_xy is not None else None
     time_hint = (contact_time, 0.5 * frame) if contact_time is not None else None
     extrapolate = _incoming_extrapolator(sorted(incoming, key=lambda o: o.t), frame) if incoming else None
+    landing = None
+    if landing_px is not None and landing_time is not None:
+        floor = camera.point_at_height(landing_px[0], landing_px[1], 0.0)
+        if floor is None:
+            raise ValueError("the landing pixel is above the horizon")
+        landing = (floor, landing_time, 0.5 * frame)
 
     def gap_for(first_t: float) -> float:
         if max_gap_s is not None:
@@ -304,7 +334,16 @@ def fit_flight(
 
     def problem_for(points, contact_hint):
         return _Problem(
-            camera, points, k, gravity, gap_for(points[0].t), contact_hint, takeoff, extrapolate, time_hint
+            camera,
+            points,
+            k,
+            gravity,
+            gap_for(points[0].t),
+            contact_hint,
+            takeoff,
+            extrapolate,
+            time_hint,
+            landing,
         )
 
     problem = problem_for(obs, hint)
@@ -462,12 +501,19 @@ def _summarize(problem: _Problem, best_x: np.ndarray, best_cost: float, profile_
             problem.takeoff_hint,
             problem.incoming,
             problem.time_hint,
+            problem.landing,
         )
         x, _ = _levenberg_marquardt(alt.free, best_x, max_iter=30)
         record(x[1:4], x[4:7], alt.contact_time(x[0]), alt.k)
 
     r = problem.residuals(tc, p0, v0)[:n_res].reshape(-1, 2) * problem.sig[:, None]
     rms = float(np.sqrt(np.mean(np.sum(r**2, axis=1))))
+    # How much the shuttle's distance from the camera changes over the tracked
+    # flight. Perspective is what lets one camera judge depth: a camera far away
+    # (a broadcast camera 30 m back with a long lens) sees little change, and then
+    # depth rests on physics and hints.
+    dist = np.linalg.norm(problem.last_states[:, :3] - camera.position, axis=1)
+    distance_ratio = float(dist.max() / max(dist.min(), 1e-6))
 
     # Landing: carry on from the last observation until it reaches the floor.
     landing, landing_t = None, None
@@ -498,4 +544,5 @@ def _summarize(problem: _Problem, best_x: np.ndarray, best_cost: float, profile_
         k=k,
         gravity=g,
         depth_range=(min(depth_ok), max(depth_ok)),
+        distance_ratio=distance_ratio,
     )

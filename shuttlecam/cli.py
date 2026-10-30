@@ -263,12 +263,13 @@ def _read_track_csv(path: str, fps: float, sigma: float):
     return obs
 
 
-def _print_shot(i: int, shot, fps: float) -> None:
+def _print_shot(i: int, shot, frame_of) -> None:
+    """One shot's report. `frame_of(t)` turns a time back into a video frame number."""
     f = shot.fit
     obs = f.observations
     lo, hi = f.speed_range_kmh
     flo, fhi = f.first_seen_range_kmh
-    print(f"shot {i}: frames {obs[0].t * fps:.0f}-{obs[-1].t * fps:.0f}, {len(obs)} points")
+    print(f"shot {i}: frames {frame_of(obs[0].t):.0f}-{frame_of(obs[-1].t):.0f}, {len(obs)} points")
     if shot.launch_reliable:
         print(f"  launch speed   {f.speed_kmh:4.0f} km/h   (range {lo:.0f}-{hi:.0f})")
     elif shot.launch_known:
@@ -277,15 +278,20 @@ def _print_shot(i: int, shot, fps: float) -> None:
         print("  launch speed   unknown: the hit wasn't seen (no incoming shuttle; try --contact)")
     ms = (f.first_seen_time - f.contact_time) * 1000
     print(
-        f"  first tracked  {f.first_seen_kmh:4.0f} km/h   (range {flo:.0f}-{fhi:.0f}), frame {f.first_seen_time * fps:.0f}",
+        f"  first tracked  {f.first_seen_kmh:4.0f} km/h   (range {flo:.0f}-{fhi:.0f}), frame {frame_of(f.first_seen_time):.0f}",
         end="",
     )
     print(f", {ms:.0f} ms after the hit" if shot.launch_known else "")
     x, y, z = f.contact
-    print(f"  hit            frame {f.contact_time * fps:.1f}, {z:.2f} m high at X={x:+.2f} Y={y:+.2f}")
+    print(f"  hit            frame {frame_of(f.contact_time):.1f}, {z:.2f} m high at X={x:+.2f} Y={y:+.2f}")
+    if shot.incoming is not None:
+        o = shot.incoming.observations
+        print(
+            f"  incoming       timed from the track at frames {frame_of(o[0].t):.0f}-{frame_of(o[-1].t):.0f}"
+        )
     if f.landing is not None:
         print(
-            f"  lands          X={f.landing[0]:+.2f} Y={f.landing[1]:+.2f} at frame {f.landing_time * fps:.0f}"
+            f"  lands          X={f.landing[0]:+.2f} Y={f.landing[1]:+.2f} at frame {frame_of(f.landing_time):.0f}"
         )
     note = (
         "distance from the camera poorly determined: add --takeoff"
@@ -293,104 +299,149 @@ def _print_shot(i: int, shot, fps: float) -> None:
         else "depth well determined"
     )
     print(f"  fit            {f.rms_px:.2f} px RMS; {note}")
+    if f.distance_ratio < 1.5 and not shot.anchored:
+        print(
+            f"  view           little perspective: the shuttle's distance from the camera only changes "
+            f"{f.distance_ratio:.1f}x,\n                 so depth rests on physics. Add --takeoff and --landing to anchor both ends."
+        )
 
 
 def cmd_analyze3d(cfg: Config, args) -> None:
     import dataclasses
 
     import cv2
+    import numpy as np
 
-    from .analyze3d import ImageTrack, Shot3D, analyze_3d
+    from .analyze3d import ImageTrack, Shot3D, analyze_3d, find_repeated_frames
     from .camera import VideoSource
     from .camera3d import CameraModel
     from .fit3d import fit_flight
 
     camera = CameraModel.load(args.camera)
     vt = cfg.tracker.terminal_velocity
-    contact_px = contact_time = takeoff = None
     fps = args.fps
+    timing = None
 
     if args.track:
         if not fps:
             sys.exit("--track needs --fps")
         obs = _read_track_csv(args.track, fps, cfg.analyze3d.pixel_noise)
         incoming = _read_track_csv(args.incoming, fps, cfg.analyze3d.pixel_noise) if args.incoming else None
+        frame_dt = 1 / fps
         cam = camera
     else:
         cam_cfg = dataclasses.replace(cfg.camera, process_width=0, file_fps=args.fps)  # full resolution
         source = VideoSource(cam_cfg, args.video)
         fps = source.fps
-        if args.start:
-            source.cap.set(cv2.CAP_PROP_POS_FRAMES, int(args.start * fps))
         start_index = int(args.start * fps) if args.start else 0
         end_index = int(args.end * fps) if args.end else None
+        if not args.keep_repeats:
+            timing = find_repeated_frames(args.video, start_index, end_index)
+        if start_index:
+            source.cap.set(cv2.CAP_PROP_POS_FRAMES, start_index)
+        keep = set(timing.keep) if timing else None
 
         def frames():
             for frame in source:
                 index = start_index + frame.index
                 if end_index is not None and index > end_index:
                     return
-                yield dataclasses.replace(frame, t=index / fps, index=index)
+                if keep is not None and index not in keep:
+                    continue  # a repeat of the previous frame
+                t = timing.time_of(index) if timing else index / fps
+                yield dataclasses.replace(frame, t=t, index=index)
 
         w = int(source.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(source.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cam = camera.for_frame_size(w, h)
+        frame_dt = 1 / timing.rate if timing else 1 / fps
 
-    if args.contact:
-        uv, _, frame_no = args.contact.partition("@")
-        contact_px = tuple(float(v) for v in uv.split(","))
-        contact_time = float(frame_no) / fps if frame_no else None
+    def time_of(frame_no: float) -> float:
+        return timing.time_of(frame_no) if timing else frame_no / fps
+
+    def frame_of(t: float) -> float:
+        if timing:
+            return float(np.interp(t * timing.rate, np.arange(len(timing.keep)), timing.keep))
+        return t * fps
+
+    def hint(text: str | None):
+        """'U,V' or 'U,V@FRAME' -> ((u, v), time or None)"""
+        if not text:
+            return None, None
+        uv, _, frame_no = text.partition("@")
+        return tuple(float(v) for v in uv.split(",")), (time_of(float(frame_no)) if frame_no else None)
+
+    contact_px, contact_time = hint(args.contact)
+    landing_px, landing_time = hint(args.landing)
+    if landing_px is not None and landing_time is None:
+        sys.exit("--landing needs the frame too: U,V@FRAME")
+    takeoff = None
     if args.takeoff:
         u, v = (float(c) for c in args.takeoff.split(","))
         floor = cam.point_at_height(u, v, 0.0)
         if floor is None:
             sys.exit("--takeoff pixel is above the horizon")
         takeoff = (float(floor[0]), float(floor[1]))
+    anchored = takeoff is not None and landing_px is not None
+    hints = {
+        "contact_px": contact_px,
+        "contact_time": contact_time,
+        "takeoff_xy": takeoff,
+        "landing_px": landing_px,
+        "landing_time": landing_time,
+    }
+    hinted = contact_px is not None or anchored
+    window = args.hit_window * frame_dt if args.hit_window else None
 
     if args.track:
-        fit = fit_flight(
-            cam,
-            obs,
-            terminal_velocity=vt,
-            contact_px=contact_px,
-            contact_time=contact_time,
-            takeoff_xy=takeoff,
-            incoming=incoming,
-        )
-        shots = [
-            Shot3D(
-                ImageTrack(obs),
-                ImageTrack(incoming) if incoming else None,
-                fit,
-                hinted=contact_px is not None,
-            )
-        ]
+        fit = fit_flight(cam, obs, terminal_velocity=vt, incoming=incoming, max_gap_s=window, **hints)
+        shots = [Shot3D(ImageTrack(obs), ImageTrack(incoming) if incoming else None, fit, hinted=hinted)]
+        shots[0].anchored = anchored
     else:
-        print(f"{args.video}: {fps:.0f} fps, tracking at {w}x{h}...")
+        if timing:
+            print(
+                f"{args.video}: a {fps:.0f} fps file with repeated frames: {timing.rate:g} real frames per second, "
+                f"re-timed (--keep-repeats turns this off)"
+            )
+        print(f"{args.video}: tracking at {w}x{h}...")
         shots = analyze_3d(frames(), camera, cfg.analyze3d, terminal_velocity=vt)
         source.close()
-        if contact_px or takeoff:  # hints refer to the fastest shot
-            target = max(shots, key=lambda s: s.fit.first_seen_kmh, default=None)
-            if target is not None:
-                target.fit = fit_flight(
-                    cam,
-                    target.track.observations,
-                    terminal_velocity=vt,
-                    contact_px=contact_px,
-                    contact_time=contact_time,
-                    takeoff_xy=takeoff,
-                    incoming=target.incoming.observations if target.incoming else None,
+        if args.no_incoming:
+            for shot in shots:
+                shot.incoming = None
+        if any(v is not None for v in hints.values()) and shots:
+            # Hints describe one shot: the one ending nearest the landing (in the image
+            # and in time), else starting nearest the contact, else the fastest.
+            def gap(o, uv, t):  # pixels, plus 200 px per second apart
+                return float(np.hypot(o.u - uv[0], o.v - uv[1])) + (
+                    200 * abs(o.t - t) if t is not None else 0
                 )
-                target.hinted = contact_px is not None
 
-    shots = [s for s in shots if s.fit.first_seen_kmh >= args.min_speed]
-    shown = shots if args.all or args.track else [s for s in shots if s.reliable]
+            if landing_px is not None:
+                target = min(shots, key=lambda s: gap(s.track.observations[-1], landing_px, landing_time))
+            elif contact_px is not None:
+                target = min(shots, key=lambda s: gap(s.track.observations[0], contact_px, contact_time))
+            else:
+                target = max(shots, key=lambda s: s.fit.first_seen_kmh)
+            target.fit = fit_flight(
+                cam,
+                target.track.observations,
+                terminal_velocity=vt,
+                incoming=target.incoming.observations if target.incoming else None,
+                max_gap_s=window,
+                **hints,
+            )
+            target.hinted = hinted
+            target.anchored = anchored
+
+    shots = [s for s in shots if s.fit.first_seen_kmh >= args.min_speed or s.hinted]
+    shown = shots if args.all or args.track else [s for s in shots if s.reliable or s.hinted]
     hidden = len(shots) - len(shown)
     if not shown:
         print("No shots found." + (f" ({hidden} poor fits hidden; --all shows them.)" if hidden else ""))
         return
     for i, shot in enumerate(shown, 1):
-        _print_shot(i, shot, fps)
+        _print_shot(i, shot, frame_of)
     if hidden:
         print(
             f"({hidden} other tracks hidden: poor fits, usually players or half-hidden shots. --all shows them.)"
@@ -402,7 +453,7 @@ def cmd_analyze3d(cfg: Config, args) -> None:
         image = None
         if args.video:
             cap = cv2.VideoCapture(args.video)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, round(best.fit.first_seen_time * fps))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, round(frame_of(best.fit.first_seen_time)))
             ok, frame = cap.read()
             cap.release()
             if ok:
@@ -465,6 +516,16 @@ def main(argv: list[str] | None = None) -> None:
         "--min-speed", type=float, default=60.0, help="hide shots first tracked slower than this (km/h)"
     )
     p.add_argument("--all", action="store_true", help="also show tracks whose fit is poor")
+    p.add_argument(
+        "--landing", help="where and when the shuttle reached the floor: U,V@FRAME (anchors the flight)"
+    )
+    p.add_argument("--keep-repeats", action="store_true", help="don't drop repeated frames (see docs)")
+    p.add_argument("--no-incoming", action="store_true", help="don't time the hit from an incoming track")
+    p.add_argument(
+        "--hit-window",
+        type=float,
+        help="how many frames before the first sighting the hit may be (default 3)",
+    )
     p.add_argument("--plot", help="save a figure of the fastest shot")
     p.set_defaults(func=cmd_analyze3d)
 
