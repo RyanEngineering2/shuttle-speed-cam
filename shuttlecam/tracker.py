@@ -202,7 +202,7 @@ class Tracker:
                 if lo <= float(np.hypot(*v)) <= hi:
                     candidates.append((-t0, size_change, t0, z0, R0, v, z, R))
         candidates.sort(key=lambda c: c[:2])
-        room = min(4, cfg.max_tracks - len(self.tracks))
+        room = min(cfg.max_new_tracks, cfg.max_tracks - len(self.tracks))
         for _, _, t0, z0, R0, v, z, R in candidates[: max(0, room)]:
             self.tracks.append(self._new_track(t0, z0, R0, v, t, z, R))
         self.seeds += leftovers

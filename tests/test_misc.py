@@ -90,3 +90,31 @@ def test_cli_simulate_then_analyze(tmp_path, capsys):
     assert "shot 1:" in out
     speed = float(out.split("shot 1:")[1].split("km/h")[0])
     assert speed == pytest.approx(200, rel=0.04)
+
+
+def test_frame_rate_comes_from_the_frames_not_the_header():
+    from shuttlecam.camera import file_frame_rate
+
+    class TrimmedIphoneClip:  # header says 56.17 fps (an average), frames are 1/60 s apart
+        def __init__(self):
+            self.pos = 0
+
+        def get(self, prop):
+            import cv2
+
+            return {
+                cv2.CAP_PROP_FPS: 56.17,
+                cv2.CAP_PROP_POS_FRAMES: self.pos,
+                cv2.CAP_PROP_POS_MSEC: (self.pos - 1) * 1000 / 60,
+            }[prop]
+
+        def grab(self):
+            self.pos += 1
+            return self.pos < 100
+
+        def set(self, prop, value):
+            self.pos = value
+
+    cap = TrimmedIphoneClip()
+    assert file_frame_rate(cap) == pytest.approx(60.0)
+    assert cap.pos == 0  # left where it was

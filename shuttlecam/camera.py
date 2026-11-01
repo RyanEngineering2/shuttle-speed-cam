@@ -27,6 +27,31 @@ class Frame:
     index: int
 
 
+def file_frame_rate(cap) -> float:
+    """A video file's real frame rate, from its frames' own timestamps.
+
+    The rate in the file header can be an average over the whole clip: an iPhone
+    clip trimmed in Photos reports 56 fps for frames that are 1/60 s apart, which
+    would make every speed 7% slow. The spacing of the first frames is what the
+    camera actually recorded. Leaves the read position where it was.
+    """
+    header = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    start = cap.get(cv2.CAP_PROP_POS_FRAMES)
+    stamps = []
+    for _ in range(40):
+        if not cap.grab():
+            break
+        stamps.append(cap.get(cv2.CAP_PROP_POS_MSEC))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+    gaps = np.diff(stamps)
+    gaps = gaps[gaps > 0]
+    if len(gaps) >= 5:
+        measured = 1000.0 / float(np.median(gaps))
+        if header <= 1 or abs(measured - header) > 0.01 * measured:
+            return measured
+    return header
+
+
 def process_size(width: int, height: int, process_width: int) -> tuple[int, int]:
     """Processing size for a `width` x `height` frame, keeping the aspect ratio."""
     if process_width <= 0 or process_width >= width:
@@ -108,7 +133,7 @@ class VideoSource:
         self.cap = cv2.VideoCapture(int(source) if self.live else source)
         if not self.cap.isOpened():
             raise RuntimeError(f"could not open video source {source!r}")
-        file_fps = self.cap.get(cv2.CAP_PROP_FPS) or 0.0
+        file_fps = 0.0 if self.live or cfg.file_fps else file_frame_rate(self.cap)
         self.fps = cfg.file_fps or (file_fps if file_fps > 1 else cfg.fps)
         self.process_width = cfg.process_width
 

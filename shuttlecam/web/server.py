@@ -34,8 +34,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import cv2
+import numpy as np
 from flask import Flask, abort, jsonify, request, send_file, session
 
+from ..camera import file_frame_rate
 from ..camera3d import calibrate_camera, draw_court
 from ..court import landmarks, segments
 
@@ -104,7 +106,7 @@ def probe(path: Path) -> dict:
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
         raise ValueError("this file can't be read as a video")
-    fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    fps = file_frame_rate(cap)
     frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     ok, frame = cap.read()
     cap.release()
@@ -337,6 +339,18 @@ def create_app(
             setup_id = active
         if ID.match(setup_id or "") and (store.root / "setups" / setup_id / "record.json").exists():
             setup = store.load("setups", setup_id)
+            moved = _camera_moved(store, setup, folder / video, info)
+            if moved is not None:
+                # The phone has moved since this spot was marked: the clip needs its own,
+                # starting from the old points shifted by how far the picture moved.
+                dx, dy = moved
+                old_points = setup.get("points") or {}
+                setup = _new_setup(store, folder / video, info)
+                setup.update(
+                    moved_px=round(float(np.hypot(dx, dy)), 1),
+                    points={k: [u + dx, v + dy] for k, (u, v) in old_points.items()},
+                )
+                store.save("setups", setup)
         else:  # a new camera position: this clip's frame is the one to calibrate on
             setup = _new_setup(store, folder / video, info)
         clip = {
@@ -395,6 +409,15 @@ def create_app(
             return jsonify(error="points must be {landmark: [u, v]}"), 400
         if len(points) < 6:
             return jsonify(error=f"mark at least 6 landmarks ({len(points)} so far)"), 400
+        # A post's top can't be below its bottom in the picture: swapped taps.
+        notes = []
+        for side in ("left", "right"):
+            top, base = f"post_{side}_top", f"post_{side}_base"
+            if top in points and base in points and points[top][1] > points[base][1]:
+                points[top], points[base] = points[base], points[top]
+                notes.append(
+                    f"The {side} net post's top and bottom were the wrong way round, so they were swapped."
+                )
         size = (setup["width"], setup["height"])
         try:
             cal = calibrate_camera(points, size)
@@ -414,6 +437,7 @@ def create_app(
             errors_px={k: round(v, 1) for k, v in cal.errors_px.items()},
             camera_position=[round(x, 2), round(y, 2), round(z, 2)],
             calibrated=time.time(),
+            notes=notes,
         )
         store.save("setups", setup)
         return jsonify(setup)
@@ -442,6 +466,32 @@ def create_app(
     if not inline_jobs:
         worker.start()
     return app
+
+
+MOVED_PX = 6.0  # the picture shifting more than this (full-size pixels) means the phone moved
+
+
+def camera_shift(a, b) -> tuple[float, float]:
+    """How far the scene moved from image `a` to image `b`, in pixels (phase correlation
+    on the whole picture: the hall dominates, the players are a small part)."""
+    ga = cv2.cvtColor(a, cv2.COLOR_BGR2GRAY) if a.ndim == 3 else a
+    gb = cv2.cvtColor(b, cv2.COLOR_BGR2GRAY) if b.ndim == 3 else b
+    if ga.shape != gb.shape:
+        gb = cv2.resize(gb, (ga.shape[1], ga.shape[0]))
+    k = 640 / ga.shape[1]
+    small = [np.float32(cv2.resize(g, None, fx=k, fy=k, interpolation=cv2.INTER_AREA)) for g in (ga, gb)]
+    window = cv2.createHanningWindow((small[0].shape[1], small[0].shape[0]), cv2.CV_32F)
+    (dx, dy), _ = cv2.phaseCorrelate(small[0], small[1], window)
+    return dx / k, dy / k
+
+
+def _camera_moved(store: Store, setup: dict, video: Path, info: dict):
+    """(dx, dy) if this clip's view has shifted from the setup's frame, else None."""
+    ref = cv2.imread(str(store.dir("setups", setup["id"]) / "frame.jpg"))
+    if ref is None or (info["width"], info["height"]) != (setup["width"], setup["height"]):
+        return None
+    dx, dy = camera_shift(ref, grab_frame(video, min(0.5, info["seconds"] / 2)))
+    return (dx, dy) if np.hypot(dx, dy) > MOVED_PX else None
 
 
 def _new_setup(store: Store, video: Path, info: dict) -> dict:

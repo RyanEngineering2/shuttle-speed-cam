@@ -24,7 +24,7 @@ import cv2
 import numpy as np
 
 from .calibration import Calibration
-from .camera import Frame
+from .camera import Frame, file_frame_rate
 from .camera3d import CameraModel
 from .config import Analyze3DConfig, DetectorConfig, TrackerConfig
 from .detector import MotionDetector
@@ -139,7 +139,7 @@ def find_repeated_frames(video_path: str, start: int = 0, end: int | None = None
     60 fps footage of a quiet scene from being mistaken for repeats.
     """
     cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 60.0
+    fps = file_frame_rate(cap) or 60.0
     if start:
         cap.set(cv2.CAP_PROP_POS_FRAMES, start)
     prev, change, i = None, [], start
@@ -193,7 +193,7 @@ def track_image_space(
                 DetectorConfig(
                     diff_threshold=cfg.diff_threshold,
                     max_area=round(cfg.max_area * s * s),
-                    max_detections=20,
+                    max_detections=cfg.max_detections,
                     player_area=round(cfg.player_area * s * s),
                     player_margin=round(cfg.player_margin * s),
                 )
@@ -209,7 +209,8 @@ def track_image_space(
                     pixel_noise=cfg.pixel_noise,
                     min_hits=cfg.min_hits,
                     max_misses=cfg.max_misses,
-                    max_tracks=16,
+                    max_tracks=cfg.max_tracks,
+                    max_new_tracks=cfg.max_new_tracks,
                     max_duration_s=3.0,
                     min_speed_kmh=cfg.min_image_speed * s * 3.6,
                     max_speed_kmh=cfg.max_image_speed * s * 3.6,

@@ -10,8 +10,8 @@ const GUIDE = [
   ["near_short/right_doubles", "Near service line, right end", "Where the front service line on your side meets the outer right sideline."],
   ["post_left_base", "Left net post, bottom", "Where the left post stands on the floor."],
   ["post_left_top", "Left net post, top", "The very top of the left post."],
-  ["post_right_top", "Right net post, top", "The very top of the right post."],
   ["post_right_base", "Right net post, bottom", "Where the right post stands on the floor."],
+  ["post_right_top", "Right net post, top", "The very top of the right post."],
   ["far_short/left_doubles", "Far service line, left end", "The far side's front service line, at the outer left sideline."],
   ["far_short/centre", "Far T", "Where the centre line meets the far side's front service line."],
   ["far_short/right_doubles", "Far service line, right end", "The far side's front service line, at the outer right sideline."],
@@ -255,6 +255,11 @@ function startCalibration(setup) {
   for (const [k, v] of Object.entries(setup.points || {})) points[k] = v.slice();
   S.cal = { setup, step: 0, points, drag: null };
   setError("cal-error", "");
+  $("cal-note").textContent = setup.moved_px
+    ? `Your phone moved since the last camera spot (the picture shifted about ${Math.round(setup.moved_px)} px), ` +
+      "so check the court points for this clip. They start where they were, shifted to match: adjust any that are off."
+    : "";
+  $("cal-note").hidden = !setup.moved_px;
   show("calibrate");
   const img = $("frame");
   img.onload = () => {
@@ -446,6 +451,7 @@ function showCheck(setup) {
   $("check-text").textContent = `The points fit to ${setup.rms_px} px. The camera is ${where}.`;
   const list = $("check-worst");
   list.replaceChildren();
+  for (const note of setup.notes || []) list.append(el("li", "warn", note));
   if (setup.rms_px > LOOSE_FIT_PX) {
     list.append(el("li", "warn",
       "That's a loose fit. A fisheye lens (or a point marked in the wrong place) does this, " +

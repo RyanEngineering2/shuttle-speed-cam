@@ -113,3 +113,39 @@ def test_the_camera_guide_pictures_are_served(client):
         r = client.get(f"/static/{name}")
         assert r.status_code == 200
         assert ET.fromstring(r.get_data()).tag.endswith("svg")  # well-formed
+
+
+def write_scene(path, scene, shift=(0, 0)):
+    import cv2
+    import numpy as np
+
+    out = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), scene.fps, scene.size, isColor=False)
+    m = np.float32([[1, 0, shift[0]], [0, 1, shift[1]]])
+    for frame in scene.frames():
+        out.write(cv2.warpAffine(frame.image, m, scene.size, borderMode=cv2.BORDER_REPLICATE))
+    out.release()
+    return path.read_bytes()
+
+
+def test_swapped_post_taps_and_a_moved_phone_are_caught(client, tmp_path):
+    scene = Smash3DScene(size=(960, 540))
+    login(client)
+    setup = upload(client, write_scene(tmp_path / "a.avi", scene), "a.avi").json["setup"]
+
+    # Tapping a post's top and bottom the wrong way round is undone.
+    points = scene.landmark_pixels(noise_px=0.5)
+    points["post_right_top"], points["post_right_base"] = points["post_right_base"], points["post_right_top"]
+    r = client.post(f"/api/setups/{setup['id']}/calibrate", json={"points": points}, headers=HEADER)
+    assert r.status_code == 200 and r.json["rms_px"] < 2
+    assert any("right net post" in n for n in r.json["notes"])
+    client.post(f"/api/setups/{setup['id']}/accept", headers=HEADER)
+
+    # A clip filmed after the phone moved gets a new camera spot, with the old points
+    # shifted to match as a starting point, instead of being measured with the old one.
+    r = upload(client, write_scene(tmp_path / "b.avi", scene, shift=(4, 12)), "b.avi", setup="current")
+    clip, moved = r.json["clip"], r.json["setup"]
+    assert clip["status"] == "needs_calibration" and moved["id"] != setup["id"]
+    assert moved["moved_px"] == pytest.approx(12.6, abs=1.5)
+    u, v = moved["points"]["near_short/centre"]
+    u0, v0 = points["near_short/centre"]
+    assert (u - u0, v - v0) == pytest.approx((4, 12), abs=1.5)

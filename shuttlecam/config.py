@@ -84,6 +84,7 @@ class TrackerConfig:
     min_hits: int = 5
     max_misses: int = 3
     max_tracks: int = 10
+    max_new_tracks: int = 4  # candidate tracks started per frame
     max_duration_s: float = 2.0
     min_speed_kmh: float = 50.0
     max_speed_kmh: float = 450.0
@@ -117,6 +118,13 @@ class Analyze3DConfig:
     max_misses: int = 4
     min_path: float = 80.0  # px
     max_jitter: float = 0.8
+    # How much motion the image tracker considers. Raising these can rescue a shuttle
+    # crowded out in a busy scene (IMG_4666 in docs/web-app.md needed 40 / 48 / 16),
+    # but in other clips the extra junk tracks steal the shuttle's first points, so
+    # the defaults stay where the reference clips measure correctly.
+    max_detections: int = 20  # per frame, away-from-players first, then strongest
+    max_tracks: int = 16
+    max_new_tracks: int = 4  # candidate tracks started per frame
     # A track that ended at most this long before a shot started, and this close
     # to where it started (px), is taken as the incoming shuttle.
     incoming_gap_s: float = 0.4

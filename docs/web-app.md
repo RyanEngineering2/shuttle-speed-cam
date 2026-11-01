@@ -146,6 +146,38 @@ empty court from the first frame, and a clip that starts a second before the sma
 doesn't give it time to forget where the players stood. Clips under 4 s now start
 it from the median of the clip's frames instead (`analyze3d --background`).
 
+## First real phone clips
+
+Two iPhone 15 Pro clips from a club session (0.5× lens, 1080p, 60 fps HDR; not
+included here), uploaded through the app, both came back "No smash found". What
+went wrong, and what changed:
+
+- **The court marking fit to 64 px** (good is 1–3). The right net post's top and
+  bottom were tapped the wrong way round: the guide asked for left bottom-then-top
+  but right top-then-bottom. Both posts now go bottom-then-top, and the server swaps
+  a post whose top lands below its bottom, and says so.
+- **The phone moved between the two clips** (the picture shifted 9 × 20 px), but
+  the second clip was measured with the first clip's court. Each upload is now
+  compared with its camera spot's frame; if the view has shifted more than 6 px it
+  gets a new spot, with the old points moved to match as a starting point.
+- **The frame rate was wrong.** A clip trimmed in Photos says 56–58 fps in its
+  header (an average over the clip) for frames that are 1/60 s apart, which would
+  read every speed 4–7% slow. The rate now comes from the frames' timestamps.
+- **The phone was 0.55 m off the floor, right behind the player.** In one clip the
+  smash stays hidden behind the player's body; it shows for only a few frames beside
+  them, mixed up with the racket's follow-through. No reading is possible from that
+  clip. In the other it flies past the player's side, almost straight away from
+  the camera, among a lot of other motion (two players, rackets). The image tracker
+  only picked it up with more room (`[analyze3d] max_detections = 40`, `max_tracks
+  = 48`, `max_new_tracks = 16`), and those settings break the reference clips, so
+  they aren't the defaults.
+
+With the court re-marked (2.1 px), that second clip measures **234 km/h**
+(225–245), hit 2.6 m above the court and landing at the far baseline; 210 km/h with
+the drag tuned to the broadcast reading. The lesson is the set-up guide's: film from
+about 2 m high and a little to one side, so the smash flies past the player in the
+picture.
+
 ## Security
 
 With the private Tailscale set-up only your devices can reach the site at all. If you
