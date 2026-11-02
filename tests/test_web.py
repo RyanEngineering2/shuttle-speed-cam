@@ -149,3 +149,45 @@ def test_swapped_post_taps_and_a_moved_phone_are_caught(client, tmp_path):
     u, v = moved["points"]["near_short/centre"]
     u0, v0 = points["near_short/centre"]
     assert (u - u0, v - v0) == pytest.approx((4, 12), abs=1.5)
+
+
+def test_help_after_no_speed_check_the_court_then_tap_the_shuttle(client, tmp_path):
+    scene = Smash3DScene(size=(960, 540))
+    login(client)
+    clip = upload(client, write_scene(tmp_path / "a.avi", scene), "a.avi").json["clip"]
+    points = scene.landmark_pixels(noise_px=0.5)
+    client.post(f"/api/setups/{clip['setup']}/calibrate", json={"points": points}, headers=HEADER)
+    client.post(f"/api/setups/{clip['setup']}/accept", headers=HEADER)
+
+    # Help: the clip gets its own camera spot, starting from the old points, and waits
+    # for the taps even once the court is accepted.
+    r = client.post(f"/api/clips/{clip['id']}/help", headers=HEADER)
+    help_setup = r.json["setup"]
+    assert r.json["clip"]["status"] == "needs_help" and help_setup["id"] != clip["setup"]
+    assert help_setup["points"]["near_short/centre"] == pytest.approx(list(points["near_short/centre"]))
+    assert (
+        client.post(f"/api/clips/{clip['id']}/shuttle", json={"after": [1, 1, 1]}, headers=HEADER).status_code
+        == 400
+    )
+    client.post(
+        f"/api/setups/{help_setup['id']}/calibrate", json={"points": help_setup["points"]}, headers=HEADER
+    )
+    client.post(f"/api/setups/{help_setup['id']}/accept", headers=HEADER)
+    assert client.get(f"/api/clips/{clip['id']}").json["status"] == "needs_help"
+
+    frame = client.get(f"/api/clips/{clip['id']}/frame/15.jpg")
+    assert frame.status_code == 200 and frame.mimetype == "image/jpeg"
+
+    # Tap the shuttle just after the hit: it's followed from there and measured.
+    k = int(scene.t_hit * scene.fps) + 3
+    u, v = scene.camera.project([scene.truth(k / scene.fps)[:3]])[0]
+    bad = client.post(f"/api/clips/{clip['id']}/shuttle", json={"after": [5000, 5, k]}, headers=HEADER)
+    assert bad.status_code == 400
+    done = client.post(
+        f"/api/clips/{clip['id']}/shuttle", json={"after": [u + 3, v - 2, k]}, headers=HEADER
+    ).json
+    assert done["status"] == "done", done.get("error")
+    best = done["result"]["shots"][done["result"]["best"]]
+    assert best["guided"] and best["launch_reliable"]
+    lo, hi = best["launch_range_kmh"]
+    assert lo <= scene.speed_kmh <= hi

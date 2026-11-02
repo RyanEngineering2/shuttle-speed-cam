@@ -52,6 +52,7 @@ class Shot3D:
     fit: FlightFit
     hinted: bool = False  # the user said where/when the hit was, or anchored both ends
     anchored: bool = False  # take-off spot and landing given: both ends of the flight pinned
+    guided: bool = False  # tracked outward from a point the user tapped (follow_from_hint)
 
     @property
     def launch_known(self) -> bool:
@@ -303,6 +304,96 @@ def split_at_hits(track: ImageTrack, min_points: int = 4) -> list[ImageTrack]:
     return split_at_hits(ImageTrack(obs[: best_i + 1]), min_points) + split_at_hits(
         ImageTrack(obs[best_i + 1 :]), min_points
     )
+
+
+def follow_from_hint(
+    frames: Iterable[Frame],
+    cfg: Analyze3DConfig,
+    hint_t: float,
+    hint_uv: tuple[float, float],
+    background: np.ndarray | None = None,
+    max_s: float = 1.0,
+) -> ImageTrack | None:
+    """The shuttle followed outward from one point a person tapped on it.
+
+    For shots the automatic tracker misses: a smash flying away from the camera past
+    a player, among rackets and other players, where the tracker's guard against
+    limbs (no new tracks next to a player, a limited number of candidates per frame)
+    keeps it from ever starting. Here the start is given, so neither is needed: from
+    the tapped detection, take the nearest detection in each next (and previous)
+    frame within a window around where the motion so far predicts it, and stop after
+    a few frames with nothing there. The result is split at hits, and the part with
+    the tap is returned, or None if there's too little of it.
+    """
+    detector = None
+    dets: list[tuple[float, list[tuple[float, float]]]] = []
+    s = 1.0
+    for frame in frames:
+        if detector is None:
+            s = frame.image.shape[1] / 1920
+            detector = MotionDetector(
+                DetectorConfig(
+                    diff_threshold=cfg.diff_threshold,
+                    max_area=round(cfg.max_area * s * s),
+                    max_detections=200,
+                    player_area=round(cfg.player_area * s * s),
+                    player_margin=0,
+                )
+            )
+            if background is not None and background.shape == frame.image.shape:
+                detector.prime(background)
+        found = detector(frame.image)
+        if abs(frame.t - hint_t) <= max_s:
+            dets.append((frame.t, [(d.x, d.y) for d in found]))
+    if not dets:
+        return None
+    times = [t for t, _ in dets]
+    i0 = int(np.argmin([abs(t - hint_t) for t in times]))
+    near = [p for p in dets[i0][1] if np.hypot(p[0] - hint_uv[0], p[1] - hint_uv[1]) < 45 * s]
+    if not near:
+        return None
+    start = min(near, key=lambda p: np.hypot(p[0] - hint_uv[0], p[1] - hint_uv[1]))
+
+    def walk(step: int, first_velocity=None) -> list[tuple[float, float, float]]:
+        pts = [(times[i0], *start)]
+        v = first_velocity
+        misses, i = 0, i0
+        while misses < 3:
+            i += step
+            if not 0 <= i < len(dets):
+                break
+            t, cands = dets[i]
+            last_t, lu, lv = pts[-1]
+            if v is None:
+                pred, radius = (lu, lv), 70 * s
+            else:
+                dt = (t - last_t) * step
+                pred = (lu + v[0] * dt, lv + v[1] * dt)
+                radius = 14 * s + 0.6 * float(np.hypot(*v)) * abs(t - last_t)
+            close = [p for p in cands if np.hypot(p[0] - pred[0], p[1] - pred[1]) < radius]
+            if not close:
+                misses += 1
+                continue
+            u, w = min(close, key=lambda p: np.hypot(p[0] - pred[0], p[1] - pred[1]))
+            v = ((u - lu) / ((t - last_t) * step), (w - lv) / ((t - last_t) * step))
+            pts.append((t, u, w))
+            misses = 0
+        return pts
+
+    ahead = walk(+1)
+    v0 = None
+    if len(ahead) >= 2:
+        (ta, ua, va), (tb, ub, vb) = ahead[0], ahead[1]
+        v0 = (-(ub - ua) / (tb - ta), -(vb - va) / (tb - ta))  # per second, going back in time
+    behind = walk(-1, v0)
+    pts = sorted(set(behind + ahead))
+    if len(pts) < 6:
+        return None
+    obs = [Observation(t, u, v, cfg.pixel_noise) for t, u, v in pts]
+    for part in split_at_hits(ImageTrack(obs)):
+        if part.t_start - 1e-9 <= times[i0] <= part.t_end + 1e-9:
+            return part if len(part.observations) >= 6 else None
+    return None
 
 
 def find_incoming(track: ImageTrack, tracks: list[ImageTrack], max_gap_s: float, max_dist_px: float):

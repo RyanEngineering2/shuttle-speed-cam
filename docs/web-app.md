@@ -129,6 +129,14 @@ How the number is shown:
 
 Move the phone, and pick "New camera spot" on the next upload.
 
+**When a clip comes back without a speed**, its result offers help: check the court
+marking on that clip's own picture (your earlier points are filled in), then slide
+to a frame just after the hit and tap the shuttle, and optionally once more just
+before the hit. It's measured again, following the shuttle outward from your taps
+(`analyze3d --shuttle U,V@FRAME --shuttle-before U,V@FRAME`). This is for smashes
+the automatic tracker loses among players and rackets: on the club clip below, one
+tap turned "No smash found" into 230 km/h (221–240).
+
 ## Tested
 
 Momota's jump smash from [3D mode](3d-mode.md#how-well-it-works), cut to a 2 s clip

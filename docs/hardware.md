@@ -1,5 +1,36 @@
 # Hardware
 
+## How it changed: from a Pi camera to a phone
+
+| Version | Camera | Processing | Result shown on | Status |
+|---|---|---|---|---|
+| v1 | OV2640 on an ESP32-CAM, ~30 fps | the ESP32 itself | P10 panels | retired: 30 fps misses the smash |
+| v2 | Pi camera, ~200 fps, side-on to the flight | Pi Zero 2 W, live 2D tracking | ESP32 + P10 panels | built in code and simulation; needs a fixed side-on mount |
+| **v3** | **any phone, 60–240 fps, from behind the smasher** | **a PC at home, 3D mode** (`shuttlecam serve`), over Tailscale | **the phone** | **in use** |
+| v4 | a phone | **a Pi 5 at the court with its own Wi-Fi hotspot** | the phone, and the P10 panels again | planned: [Pi hotspot box](pi-hotspot.md) |
+
+What moving to the phone changed:
+
+- **The camera is no longer hardware to build.** Phones film 60–240 fps at
+  1080p with good low-light processing; the 3D mode calibrates them from the
+  court lines, so there's no measuring tape and no side-on mount. The set-up rule
+  is placement instead: behind the smasher, about 2 m up, 6 m back (3.5 m with
+  0.5×) ([web app](web-app.md#where-to-put-the-phone)).
+- **It's no longer live.** v2 shows a speed within a second of the smash; the
+  phone path takes about a minute per clip (upload, then fitting the flight in 3D).
+  In return it works from any angle, and each result comes with the flight drawn.
+- **The Pi moves from camera to server.** v2 needs a Pi that can grab 200 fps
+  frames; v4 needs one that can run the 3D fits, which is a Pi 5 rather than a
+  Zero 2 W ([why](pi-hotspot.md#which-pi)).
+- **The P10 display is optional now** but stays useful: v4 can send each measured
+  speed to it, so the whole hall still sees the number.
+- **What carries over unchanged:** the drag physics and Kalman filtering, the
+  motion detector, the ESP32 display firmware and its serial protocol.
+
+The rest of this page is the v2 build: Pi camera, Pi Zero 2 W and P10 panels.
+
+## v2: the live side-on camera
+
 ```mermaid
 flowchart LR
     cam["Pi camera module<br/>high-fps mode"] -- CSI ribbon --> pi["Raspberry Pi Zero 2 W<br/>shuttlecam (Python)"]
@@ -10,7 +41,7 @@ flowchart LR
     psu --> p10
 ```
 
-## Parts (v2, current)
+## Parts (v2)
 
 | Part | Notes |
 |---|---|

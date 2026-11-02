@@ -101,13 +101,17 @@ against a radar gun in a real hall is next on the [roadmap](#roadmap).
 
 ## Hardware
 
-| | v2 (current) | v1 (retired) |
-|---|---|---|
-| Camera | Pi camera module, 640×480 at ~200 fps | OV2640, 320×240 at ~30 fps |
-| Brain | Raspberry Pi Zero 2 W, Python + OpenCV | ESP32-CAM, C++ |
-| Display | ESP32 + 2 × P10 (HUB12) panels | same |
+| | v4 (planned) | v3 (current) | v2 | v1 (retired) |
+|---|---|---|---|---|
+| Camera | a phone on a 2 m tripod | a phone on a 2 m tripod, 60–240 fps | Pi camera, 640×480 at ~200 fps, side-on | OV2640, 320×240 at ~30 fps |
+| Brain | **Raspberry Pi 5 with its own Wi-Fi hotspot**, 3D mode | a PC at home, 3D mode, reached over Tailscale | Pi Zero 2 W, live 2D tracking | ESP32-CAM, C++ |
+| Result | on the phone (+ P10 board, later) | on the phone | ESP32 + 2 × P10 panels | same |
 
-Parts list, wiring and mounting: **[docs/hardware.md](docs/hardware.md)**.
+The phone took over the camera's job: any angle instead of side-on only, and no
+mounting or wiring, at the cost of a minute's processing per clip. What's next is a
+box for the court: a Pi that makes its own Wi-Fi, so phones upload straight to it
+with no internet or home PC (**[docs/pi-hotspot.md](docs/pi-hotspot.md)**). Parts
+list, wiring and the review of each version: **[docs/hardware.md](docs/hardware.md)**.
 
 ## Quick start
 
@@ -121,7 +125,7 @@ pip install -e ".[dev]"
 shuttlecam simulate -o smash.mp4 --speed 250            # render a 250 km/h smash
 shuttlecam analyze smash.mp4 --calibration smash.calibration.json --plot shot.png
 #   shot 1:  245.2 km/h   (frame-to-frame peak 237 km/h, 45 points, t=0.080s)
-pytest                                                   # 72 tests, about a minute
+pytest                                                   # 73 tests, about a minute
 ```
 
 ### On your own slow-motion video
@@ -221,7 +225,9 @@ tests/                 unit tests plus end-to-end tests on simulated clips
 - [ ] Learn the shuttle's terminal velocity from its own tracks (feather vs nylon)
 - [ ] Two cameras for 3D tracking, removing the flight-plane assumption
 - [x] A phone web app: upload a clip at the court, get the speed ([docs/web-app.md](docs/web-app.md))
-- [ ] The same web page served by the Pi itself, with the live shot list
+- [x] When a clip gives no speed: check the court and tap the shuttle, and it's followed from there
+- [ ] The Smash Speed box: the web app on a Pi 5 with its own hotspot ([docs/pi-hotspot.md](docs/pi-hotspot.md); scripts written, not yet run on a Pi)
+- [ ] Show each measured speed on the P10 board from the box
 
 ## License
 

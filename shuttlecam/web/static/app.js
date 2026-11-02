@@ -25,7 +25,7 @@ const MIN_POINTS = 6;
 const LOOSE_FIT_PX = 6;
 
 const $ = (id) => document.getElementById(id);
-const S = { state: null, view: null, timer: null, cal: null, resultId: null, tab: "recent" };
+const S = { state: null, view: null, timer: null, cal: null, resultId: null, tab: "recent", help: null, tap: null };
 
 // -- helpers ----------------------------------------------------------------------------
 
@@ -85,6 +85,7 @@ function headline(result) {
 function status(c) {
   const clips = (S.state && S.state.clips) || [];
   if (c.status === "needs_calibration") return "Mark the court first";
+  if (c.status === "needs_help") return "Tap the shuttle";
   if (c.status === "queued") {
     const line = clips.filter((x) => x.status === "queued").sort((a, b) => a.created - b.created);
     const ahead = line.findIndex((x) => x.id === c.id) + (clips.some((x) => x.status === "running") ? 1 : 0);
@@ -195,6 +196,7 @@ function row(c, who, value, cls, rank) {
   b.append(left, el("span", `val ${cls}`, value));
   b.onclick = () => {
     if (c.status === "needs_calibration") startCalibration(S.state.setups.find((s) => s.id === c.setup));
+    else if (c.status === "needs_help") resumeHelp(c);
     else openResult(c.id);
   };
   li.append(b);
@@ -491,6 +493,7 @@ async function renderResult() {
   dl.replaceChildren();
   $("result-note").textContent = "";
   plot.hidden = true;
+  $("result-help").hidden = true;
   const pending = status(c);
   if (pending) {
     speed.className = "speed none";
@@ -499,6 +502,7 @@ async function renderResult() {
     return;
   }
   const h = headline(c.result);
+  $("result-help").hidden = !!h && h.kind === "launch";
   if (!h) {
     speed.className = "speed none";
     speed.textContent = "No smash found";
@@ -529,12 +533,131 @@ async function renderResult() {
   const notes = [];
   if (s.little_perspective) notes.push("The camera saw this flight nearly head-on, so its distance (and speed) is less certain.");
   else if (!s.depth_well_determined) notes.push("The shuttle's distance from the camera is uncertain, so the speed is too.");
+  if (s.guided) notes.push("Followed from the shuttle you tapped.");
   if (c.result.real_fps) notes.push(`The file repeats frames: measured at its real ${c.result.real_fps} fps.`);
   $("result-note").textContent = notes.join(" ");
   if (c.has_plot) {
     plot.src = `/api/clips/${c.id}/plot.png?t=${c.finished}`;
     plot.hidden = false;
   }
+}
+
+// -- helping with a clip that gave no speed ---------------------------------------------
+
+async function startHelp(clipId) {
+  try {
+    const r = await api(`/api/clips/${clipId}/help`, { method: "POST" });
+    S.help = { clip: r.clip };
+    startCalibration(r.setup);
+    $("cal-note").textContent = "First check the court on this clip's own picture: your earlier points are filled in, " +
+      "so adjust any that are off and press Calibrate. Then you'll tap the shuttle.";
+    $("cal-note").hidden = false;
+  } catch (e) {
+    $("result-note").textContent = e.message;
+  }
+}
+
+function resumeHelp(clip) {
+  const setup = S.state.setups.find((s) => s.id === clip.setup);
+  if (setup && setup.status === "ready") return startTaps(clip);
+  S.help = { clip };
+  startCalibration(setup);
+}
+
+const TAP_STEPS = {
+  after: ["Tap the shuttle just after the hit",
+    "Slide to a frame where the shuttle has just left the racket, then tap it. Close is good enough.",
+    "Next"],
+  before: ["Now tap it just before the hit",
+    "If you can, slide back to the shuttle coming down onto the racket and tap it. It helps time the hit. Or skip.",
+    "Measure"],
+};
+
+function startTaps(clip) {
+  S.tap = { clip, step: "after", taps: {}, frame: Math.round(clip.info.frames / 2), point: null };
+  const slider = $("tap-slider");
+  slider.max = String(clip.info.frames - 1);
+  setError("tap-error", "");
+  show("shuttle");
+  renderTapStep();
+  loadTapFrame();
+}
+
+function renderTapStep() {
+  const [title, hint, button] = TAP_STEPS[S.tap.step];
+  $("tap-title").textContent = title;
+  $("tap-hint").textContent = hint;
+  $("tap-use").textContent = button;
+  $("tap-use").disabled = !S.tap.point;
+  $("tap-skip").hidden = S.tap.step !== "before";
+}
+
+function loadTapFrame() {
+  const t = S.tap;
+  t.frame = Math.max(0, Math.min(t.frame, t.clip.info.frames - 1));
+  $("tap-slider").value = String(t.frame);
+  $("tap-frame-no").textContent = `Frame ${t.frame + 1} of ${t.clip.info.frames}`;
+  $("tap-frame").src = `/api/clips/${t.clip.id}/frame/${t.frame}.jpg`;
+  t.point = null;
+  drawTap();
+  renderTapStep();
+}
+
+function drawTap() {
+  const t = S.tap;
+  const { width: w, height: h } = t.clip.info;
+  const svg = $("tap-marks");
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  const r = w / 90;
+  svg.innerHTML = t.point
+    ? `<circle cx="${t.point[0]}" cy="${t.point[1]}" r="${r}" fill="none" stroke="#facc15" stroke-width="${r / 3}"/>` +
+      `<circle cx="${t.point[0]}" cy="${t.point[1]}" r="${r / 4}" fill="#facc15"/>`
+    : "";
+}
+
+async function submitTaps() {
+  const t = S.tap;
+  try {
+    await api(`/api/clips/${t.clip.id}/shuttle`, { method: "POST", json: t.taps });
+    S.tap = null;
+    await refresh();
+    openResult(t.clip.id);
+  } catch (e) {
+    setError("tap-error", e.message);
+  }
+}
+
+function setupTapping() {
+  const stage = $("tap-stage");
+  stage.addEventListener("pointerdown", (e) => {
+    if (!S.tap) return;
+    e.preventDefault();
+    const img = $("tap-frame");
+    const rect = img.getBoundingClientRect();
+    const k = S.tap.clip.info.width / rect.width;
+    S.tap.point = [(e.clientX - rect.left) * k, (e.clientY - rect.top) * k];
+    drawTap();
+    renderTapStep();
+  });
+  const go = (d) => () => { S.tap.frame += d; loadTapFrame(); };
+  $("tap-prev").onclick = go(-1);
+  $("tap-next").onclick = go(1);
+  $("tap-back10").onclick = go(-10);
+  $("tap-fwd10").onclick = go(10);
+  $("tap-slider").oninput = () => { S.tap.frame = Number($("tap-slider").value); loadTapFrame(); };
+  $("tap-use").onclick = () => {
+    const t = S.tap;
+    t.taps[t.step] = [t.point[0], t.point[1], t.frame];
+    if (t.step === "after") {
+      t.step = "before";
+      t.frame -= 6;
+      loadTapFrame();
+    } else {
+      submitTaps();
+    }
+  };
+  $("tap-skip").onclick = submitTaps;
+  $("tap-cancel").onclick = () => { S.tap = null; show("home"); refresh(); };
 }
 
 // -- wiring -----------------------------------------------------------------------------
@@ -592,6 +715,11 @@ function wire() {
     try {
       await api(`/api/setups/${S.cal.setup.id}/accept`, { method: "POST" });
       S.cal = null;
+      if (S.help) {
+        const clip = S.help.clip;
+        S.help = null;
+        return startTaps(clip);
+      }
       show("home");
       refresh();
     } catch (e) {
@@ -613,6 +741,8 @@ function wire() {
     }
   };
   setupStage();
+  setupTapping();
+  $("help-start").onclick = () => startHelp(S.resultId);
   $("guide").querySelector("summary").addEventListener("click", () => { S.guideTouched = true; });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && S.view !== "login") refresh();

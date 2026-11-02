@@ -161,6 +161,38 @@
       <p id="result-note" class="muted small"></p>
       <button id="result-delete" class="danger">Delete clip</button>
     </div>
+    <div id="result-help" class="card" hidden>
+      <h2>No speed this time?</h2>
+      <p class="small">Help it find the shuttle: check the court marking on this clip's own picture, then tap the shuttle just after the hit (and, if you can, just before it).</p>
+      <button id="help-start" class="primary wide">Check the court and tap the shuttle</button>
+    </div>
+  </section>
+
+  <section id="view-shuttle" class="view" hidden>
+    <div class="card">
+      <h2 id="tap-title"></h2>
+      <p class="muted small" id="tap-hint"></p>
+    </div>
+    <div id="tap-stage" class="stage">
+      <img id="tap-frame" alt="A frame from your clip">
+      <svg id="tap-marks" aria-hidden="true"></svg>
+    </div>
+    <div class="card">
+      <div class="scrub">
+        <button id="tap-back10" aria-label="10 frames back">&laquo;</button>
+        <button id="tap-prev" aria-label="Previous frame">&lsaquo;</button>
+        <input id="tap-slider" type="range" min="0" value="0" aria-label="Frame">
+        <button id="tap-next" aria-label="Next frame">&rsaquo;</button>
+        <button id="tap-fwd10" aria-label="10 frames forward">&raquo;</button>
+      </div>
+      <div class="muted small center" id="tap-frame-no"></div>
+      <div class="actions">
+        <button id="tap-skip" hidden>Skip</button>
+        <button id="tap-use" class="primary" disabled></button>
+      </div>
+      <p id="tap-error" class="error" hidden></p>
+      <button id="tap-cancel" class="link">Cancel</button>
+    </div>
   </section>
 </main>
 <script src="/static/app.js"></script>

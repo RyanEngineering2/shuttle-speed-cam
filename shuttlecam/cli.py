@@ -307,13 +307,15 @@ def _print_shot(i: int, shot, frame_of) -> None:
 
 
 def _headline(shots):
-    """The shot to lead with: the fastest reliable launch, else the fastest launch
-    with a timed hit, else the fastest first sighting."""
+    """The shot to lead with: the one followed from a tap if there is one, then the
+    fastest reliable launch, else the fastest launch with a timed hit, else the
+    fastest first sighting."""
     if not shots:
         return None
     return max(
         shots,
         key=lambda s: (
+            s.guided,
             s.launch_reliable,
             s.launch_known,
             s.fit.speed_kmh if s.launch_known else s.fit.first_seen_kmh,
@@ -356,7 +358,48 @@ def _shot_json(shot, frame_of) -> dict:
         "rms_px": round(float(f.rms_px), 2),
         "depth_well_determined": not f.depth_uncertain,
         "little_perspective": bool(f.distance_ratio < 1.5 and not shot.anchored and not shot.launch_reliable),
+        "guided": bool(shot.guided),
     }
+
+
+def _guided_shot(args, cfg: Config, cam, frames, background, hint, vt: float, window, hints: dict):
+    """--shuttle (and --shuttle-before): the shot followed from points a person tapped."""
+    import dataclasses
+
+    from .analyze3d import Shot3D, find_incoming, follow_from_hint, track_image_space
+    from .fit3d import fit_flight
+
+    uv, t = hint(args.shuttle)
+    if t is None:
+        sys.exit("--shuttle needs the frame too: U,V@FRAME")
+    track = follow_from_hint(frames(), cfg.analyze3d, t, uv, background)
+    if track is None:
+        print(
+            "Couldn't follow the shuttle from the --shuttle point: is it on the shuttle, just after the hit?"
+        )
+        return None
+    incoming = None
+    if args.shuttle_before:
+        uv_b, t_b = hint(args.shuttle_before)
+        if t_b is None:
+            sys.exit("--shuttle-before needs the frame too: U,V@FRAME")
+        incoming = follow_from_hint(frames(), cfg.analyze3d, t_b, uv_b, background)
+        if incoming is not None and incoming.t_end > track.t_start:
+            incoming = None  # that wasn't the shuttle on its way in
+    if incoming is None:
+        # More room than the defaults: here the tracks are only searched for the incoming shuttle.
+        roomy = dataclasses.replace(cfg.analyze3d, max_detections=40, max_tracks=48, max_new_tracks=16)
+        tracks = track_image_space(frames(), roomy, background)
+        incoming = find_incoming(track, tracks, cfg.analyze3d.incoming_gap_s, cfg.analyze3d.incoming_distance)
+    fit = fit_flight(
+        cam,
+        track.observations,
+        terminal_velocity=vt,
+        incoming=incoming.observations if incoming else None,
+        max_gap_s=window,
+        **hints,
+    )
+    return Shot3D(track, incoming, fit, guided=True)
 
 
 def _calibrate_drag(args, cam, shot, vt: float, fit_inputs: dict, source_name: str) -> None:
@@ -429,8 +472,11 @@ def cmd_analyze3d(cfg: Config, args) -> None:
             source.cap.set(cv2.CAP_PROP_POS_FRAMES, start_index)
         keep = set(timing.keep) if timing else None
 
-        def frames():
-            for frame in source:
+        def frames():  # a fresh pass over the clip each call
+            src = VideoSource(cam_cfg, args.video)
+            if start_index:
+                src.cap.set(cv2.CAP_PROP_POS_FRAMES, start_index)
+            for frame in src:
                 index = start_index + frame.index
                 if end_index is not None and index > end_index:
                     return
@@ -530,6 +576,11 @@ def cmd_analyze3d(cfg: Config, args) -> None:
             )
             target.hinted = hinted
             target.anchored = anchored
+        if args.shuttle:
+            guided = _guided_shot(args, cfg, cam, frames, background, hint, vt, window, hints)
+            if guided is not None:
+                shots.insert(0, guided)
+                target = target or guided
 
     if args.known_speed:
         if target is None:  # no hints: the fastest shot with a timed hit
@@ -543,8 +594,8 @@ def cmd_analyze3d(cfg: Config, args) -> None:
         _calibrate_drag(args, cam, target, vt, fit_inputs(target), Path(args.video or args.track).name)
         shown, hidden = [target], 0
     else:
-        shots = [s for s in shots if s.fit.first_seen_kmh >= args.min_speed or s.hinted]
-        shown = shots if args.all or args.track else [s for s in shots if s.reliable or s.hinted]
+        shots = [s for s in shots if s.fit.first_seen_kmh >= args.min_speed or s.hinted or s.guided]
+        shown = shots if args.all or args.track else [s for s in shots if s.reliable or s.hinted or s.guided]
         hidden = len(shots) - len(shown)
     best = _headline(shown)
     if args.json:
@@ -657,6 +708,10 @@ def main(argv: list[str] | None = None) -> None:
         "--landing", help="where and when the shuttle reached the floor: U,V@FRAME (anchors the flight)"
     )
     p.add_argument("--keep-repeats", action="store_true", help="don't drop repeated frames (see docs)")
+    p.add_argument(
+        "--shuttle", help="where the shuttle is just after the hit: U,V@FRAME (follows it from there)"
+    )
+    p.add_argument("--shuttle-before", help="with --shuttle: where it is just before the hit, U,V@FRAME")
     p.add_argument(
         "--background",
         choices=["auto", "median", "first-frame"],

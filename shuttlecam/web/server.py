@@ -191,6 +191,11 @@ class Worker:
         cmd += ["--json", str(folder / "result.json"), "--plot", str(folder / "plot.png")]
         if clip.get("fps"):
             cmd += ["--fps", str(clip["fps"])]
+        taps = clip.get("shuttle") or {}
+        for name, flag in (("after", "--shuttle"), ("before", "--shuttle-before")):
+            if taps.get(name):
+                u, v, frame_no = taps[name]
+                cmd += [flag, f"{u:.1f},{v:.1f}@{int(frame_no)}"]
         try:
             run = subprocess.run(
                 cmd,
@@ -389,6 +394,66 @@ def create_app(
             abort(404)
         return send_file(path, mimetype="image/png", max_age=3600)
 
+    @app.get("/api/clips/<clip_id>/frame/<int:n>.jpg")
+    def clip_frame(clip_id, n):
+        """One frame of the clip, half size (for tapping the shuttle on a phone)."""
+        clip = store.load("clips", clip_id)
+        n = max(0, min(n, int(clip["info"]["frames"]) - 1))
+        cap = cv2.VideoCapture(str(store.dir("clips", clip_id) / clip["video"]))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, n)
+        ok, frame = cap.read()
+        cap.release()
+        if not ok:
+            abort(404)
+        frame = cv2.resize(frame, None, fx=FRAME_SCALE, fy=FRAME_SCALE, interpolation=cv2.INTER_AREA)
+        ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        resp = app.response_class(jpg.tobytes(), mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "private, max-age=3600"
+        return resp
+
+    @app.post("/api/clips/<clip_id>/help")
+    def help_clip(clip_id):
+        """No speed came back: give the clip its own camera spot to check (starting from
+        the old points) before the shuttle is tapped."""
+        clip = store.load("clips", clip_id)
+        if clip["status"] in ("queued", "running"):
+            return jsonify(error="it's being measured right now"), 409
+        old = store.load("setups", clip["setup"])
+        folder = store.dir("clips", clip_id)
+        setup = _new_setup(store, folder / clip["video"], clip["info"])
+        if old.get("points"):
+            setup["points"] = old["points"]
+            store.save("setups", setup)
+        clip.update(setup=setup["id"], status="needs_help")
+        store.save("clips", clip)
+        return jsonify(clip=clip, setup=setup)
+
+    @app.post("/api/clips/<clip_id>/shuttle")
+    def shuttle_taps(clip_id):
+        """Where the shuttle is just after the hit (and, optionally, just before): measure again from there."""
+        clip = store.load("clips", clip_id)
+        setup = store.load("setups", clip["setup"])
+        if setup["status"] != "ready":
+            return jsonify(error="check the court first"), 400
+        body = request.get_json(silent=True) or {}
+        taps = {}
+        try:
+            for name in ("after", "before"):
+                if body.get(name) is not None:
+                    u, v, frame_no = (float(x) for x in body[name])
+                    if not (0 <= u < clip["info"]["width"] and 0 <= v < clip["info"]["height"]):
+                        raise ValueError
+                    taps[name] = [u, v, int(frame_no)]
+        except (TypeError, ValueError):
+            return jsonify(error="taps must be [u, v, frame] inside the picture"), 400
+        if "after" not in taps:
+            return jsonify(error="tap the shuttle just after the hit"), 400
+        clip.update(shuttle=taps, status="queued")
+        clip.pop("result", None)
+        store.save("clips", clip)
+        worker.submit(clip_id)
+        return jsonify(store.load("clips", clip_id))
+
     @app.get("/api/setups/<setup_id>/<name>.jpg")
     def setup_image(setup_id, name):
         if name not in ("frame", "overlay"):
@@ -468,6 +533,7 @@ def create_app(
     return app
 
 
+FRAME_SCALE = 0.5  # frames sent for tapping the shuttle: half size saves mobile data
 MOVED_PX = 6.0  # the picture shifting more than this (full-size pixels) means the phone moved
 
 

@@ -167,3 +167,8 @@ img.plot { background: #fff; }
 .checks li.ok::before { content: "✓"; left: 4px; }
 .checks li.no::before { content: "✗"; left: 4px; color: var(--error); }
 .warn { color: var(--warn); font-weight: 600; }
+
+/* tapping the shuttle */
+.scrub { display: flex; gap: 6px; align-items: center; }
+.scrub input { flex: 1; min-width: 0; }
+.scrub button { min-width: 44px; padding: 8px; }
